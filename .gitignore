@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+# The corpus is ~10 MB of IRS PDFs; scripts/download_corpus.sh refetches it.
+data/raw/*.pdf
+# Per-question run detail; results/runs.csv is committed, the rest is noise.
+results/*.jsonl

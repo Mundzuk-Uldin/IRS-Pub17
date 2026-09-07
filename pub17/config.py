@@ -1,0 +1,49 @@
+"""Settings shared by ingest, retrieval, generation, and the eval harness.
+
+Everything is env-overridable so the eval can sweep configurations without
+editing source.
+"""
+import os
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+RAW_DIR = ROOT / "data" / "raw"
+RESULTS_DIR = ROOT / "results"
+
+# Native PG18 on 5432 -- Ubuntu only ships pgvector for 18, and Docker Desktop's
+# WSL integration is off on this machine.
+DSN = os.environ.get("PUB17_DSN", "postgresql://postgres:postgres@localhost:5432/pub17")
+
+EMBED_MODEL = os.environ.get("PUB17_EMBED_MODEL", "BAAI/bge-base-en-v1.5")
+EMBED_DIM = 768
+
+# bge is trained asymmetrically: queries take this prefix, documents do not.
+QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+
+GEN_MODEL = os.environ.get("PUB17_GEN_MODEL", "claude-opus-5")
+# These are short factual extractions over supplied context, not open reasoning,
+# so the low effort level is enough and keeps a 60-question eval run cheap.
+GEN_EFFORT = os.environ.get("PUB17_GEN_EFFORT", "low")
+
+TOP_K = int(os.environ.get("PUB17_TOP_K", "5"))
+
+# Weekend 1 chunking: fixed word windows, no structure awareness. That is the
+# point -- it is the baseline Weekend 2 has to beat.
+WORDS_PER_CHUNK = int(os.environ.get("PUB17_WORDS_PER_CHUNK", "350"))
+OVERLAP = int(os.environ.get("PUB17_OVERLAP", "50"))
+
+# Named so the eval CSV records which pipeline produced a row.
+CONFIG_NAME = os.environ.get("PUB17_CONFIG", "baseline-naive-dense")
+
+PUBLICATIONS = {
+    "p17": "Publication 17 (Your Federal Income Tax)",
+    "p501": "Publication 501 (Dependents, Standard Deduction, and Filing Information)",
+    "p502": "Publication 502 (Medical and Dental Expenses)",
+    "i1040gi": "Form 1040 Instructions",
+    "f1040s1": "Schedule 1 (Additional Income and Adjustments to Income)",
+    "f1040s1a": "Schedule 1-A (Additional Deductions)",
+    "f1040s2": "Schedule 2 (Additional Taxes)",
+    "f1040s3": "Schedule 3 (Additional Credits and Payments)",
+}
+
+TAX_YEAR = 2025

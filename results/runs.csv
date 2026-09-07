@@ -1,0 +1,2 @@
+run_at,config,n,embed_model,gen_model,top_k,words_per_chunk,overlap,chunks_in_store,recall_at_1,recall_at_3,recall_at_5,mrr_at_5,answer_accuracy,citation_rate,retrieve_p50_ms,retrieve_p95_ms,generate_p50_ms,generate_p95_ms,total_cost_usd
+2026-09-07T17:17:48Z,baseline-naive-dense-numpy,60,BAAI/bge-base-en-v1.5,,5,350,50,1130,65.0,81.7,86.7,0.734,,,,,,,
