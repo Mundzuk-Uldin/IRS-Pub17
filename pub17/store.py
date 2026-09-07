@@ -47,7 +47,16 @@ CREATE TABLE IF NOT EXISTS query_log (
 
 def connect(autocommit=True):
     conn = psycopg.connect(config.DSN, autocommit=autocommit)
-    register_vector(conn)
+    try:
+        register_vector(conn)
+    except psycopg.ProgrammingError as exc:
+        conn.close()
+        raise SystemExit(
+            f"{exc}\n\n"
+            "The pub17 database has no pgvector. Install it and create the extension:\n"
+            "    sudo apt-get install -y postgresql-18-pgvector\n"
+            "    ./scripts/setup_db.sh"
+        ) from None
     return conn
 
 
