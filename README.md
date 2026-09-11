@@ -6,8 +6,8 @@ rather than to assemble a stack.
 
 **Status:** Weekend 1 and the evaluation set are done. Two of the four
 Weekend 2 changes are measured: section-aware chunking and cross-encoder
-reranking. Contextual enrichment is waiting on an Anthropic API key, and
-Postgres full-text hybrid search is waiting on pgvector.
+reranking. The pipeline runs end to end against pgvector in Docker.
+Contextual enrichment and Postgres full-text hybrid search are next.
 
 ## Results
 
@@ -22,7 +22,9 @@ Postgres full-text hybrid search is waiting on pgvector.
 
 n=60 questions, `bge-base-en-v1.5` retrieval, `bge-reranker-base` reranking,
 top-k=5, 350-word chunk ceiling. Measured
-by `eval/baseline_numpy.py`; every run is appended to `results/runs.csv`.
+by `eval/baseline_numpy.py` (exhaustive search, no services) and confirmed
+through pgvector by `eval/run_eval.py`; every run is appended to
+`results/runs.csv`.
 
 **One question is 1.7 points.** With n=60, only naive → section clears that
 margin comfortably: +11.6 points at recall@1 and +8.4 at recall@5, seven and
@@ -57,9 +59,19 @@ would fix it, and it wasn't done: that would be tuning the pipeline to one
 question it is scored on. Lexical hybrid search is the change that should be
 tested against it.
 
-**Latency.** Per query on the development GPU: query embedding 6 ms p50,
-exhaustive dense search 8 ms, reranking 20 candidates 172 ms p50 / 180 ms p95.
-The reranker runs in unoptimized fp32 and dominates retrieval cost.
+**Through pgvector the numbers hold.** Section chunks score identically
+through the HNSW index and through exhaustive search, both dense-only and
+reranked, and so do naive chunks dense-only. The one difference was naive
+chunks with reranking: 88.3% at recall@1 in one run against 90.0% exhaustive.
+That was q013, where that run's 20-candidate pool from the index differed from
+the exhaustive one. pgvector builds its HNSW graph randomly at each ingest, and
+the next build matched exhaustive search exactly, at both `ef_search` 40 and
+200. So an approximate index can move a question when you over-fetch 20
+candidates, and it is a one-question effect here.
+
+**Latency** through Postgres, per query on the development GPU: dense
+retrieval 9 ms p50 / 10 ms p95, dense plus reranking 166 ms / 174 ms. The
+reranker runs in unoptimized fp32 and is almost all of it.
 
 ## Why the numbers are trustworthy
 
@@ -141,8 +153,7 @@ PUB17_CHUNKER=naive PUB17_RERANK=0 python3 eval/baseline_numpy.py   # the Weeken
 For the full pipeline (pgvector storage, generation, latency and cost metrics):
 
 ```bash
-sudo apt-get install -y postgresql-18-pgvector   # Ubuntu ships pgvector for PG18 only
-./scripts/setup_db.sh
+docker compose up -d --wait     # Postgres 18 + pgvector on localhost:5434
 python3 scripts/ingest.py
 export ANTHROPIC_API_KEY=sk-ant-...
 python3 scripts/ask.py "what is the standard deduction for a single filer?"
@@ -150,12 +161,13 @@ python3 eval/run_eval.py --retrieval-only        # free
 python3 eval/run_eval.py                         # full run, makes model calls
 ```
 
-Docker Desktop's WSL integration was off on the development machine, so this
-targets a native Postgres rather than a container.
+To use a native Postgres instead, install pgvector, run
+`./scripts/setup_db.sh`, and set `PUB17_DSN`.
 
 ## Layout
 
 ```
+docker-compose.yml         Postgres 18 + pgvector on localhost:5434
 pub17/config.py            settings, all env-overridable
 pub17/chunking.py          naive and section-aware chunkers (PUB17_CHUNKER)
 pub17/rerank.py            cross-encoder reranking (PUB17_RERANK)
@@ -198,8 +210,9 @@ is the point of measuring before changing anything.
   fitting the eval.
 - No lexical retrieval yet, so an abbreviation mismatch like "ACTC" against
   "additional child tax credit" (q028) never reaches the reranker.
-- Reranking is measured only through the numpy path. The pgvector path uses the
-  same `rerank()`, but it hasn't run end to end.
+- The HNSW graph is rebuilt randomly on every ingest, so with a 20-candidate
+  pool a rebuild can move a question (q013 once). Runs aren't pinned to one
+  index build.
 - Answer accuracy is unmeasured pending the generation run.
 - Exact-key grading cannot tell a correct answer from one that states the right
   number for the wrong reason.

@@ -1,0 +1,25 @@
+# Postgres 18 with pgvector for the pub17 pipeline:  docker compose up -d
+#
+# Host port 5434 because the dev machine already runs native Postgres on 5432
+# (PG18) and has a PG17 cluster registered on 5433.
+services:
+  db:
+    image: pgvector/pgvector:pg18
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: pub17
+      POSTGRES_DB: pub17
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      # The PG18 image keeps its data under a versioned subdirectory, so the
+      # volume mounts the parent rather than /var/lib/postgresql/data.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pub17"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:

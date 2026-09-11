@@ -10,9 +10,9 @@ ROOT = Path(__file__).resolve().parent.parent
 RAW_DIR = ROOT / "data" / "raw"
 RESULTS_DIR = ROOT / "results"
 
-# Native PG18 on 5432 -- Ubuntu only ships pgvector for 18, and Docker Desktop's
-# WSL integration is off on this machine.
-DSN = os.environ.get("PUB17_DSN", "postgresql://postgres:postgres@localhost:5432/pub17")
+# The pgvector container from docker-compose.yml. For a native server with
+# pgvector installed, point PUB17_DSN at it instead.
+DSN = os.environ.get("PUB17_DSN", "postgresql://postgres:pub17@localhost:5434/pub17")
 
 EMBED_MODEL = os.environ.get("PUB17_EMBED_MODEL", "BAAI/bge-base-en-v1.5")
 EMBED_DIM = 768

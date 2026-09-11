@@ -47,16 +47,24 @@ CREATE TABLE IF NOT EXISTS query_log (
 
 
 def connect(autocommit=True):
-    conn = psycopg.connect(config.DSN, autocommit=autocommit)
     try:
+        conn = psycopg.connect(config.DSN, autocommit=autocommit)
+    except psycopg.OperationalError as exc:
+        raise SystemExit(
+            f"{exc}\n\nCan't reach Postgres. Start the bundled one with:\n"
+            "    docker compose up -d"
+        ) from None
+    try:
+        # The vector type must exist before register_vector can look it up, so
+        # on a fresh database the extension has to be created first.
+        conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
         register_vector(conn)
-    except psycopg.ProgrammingError as exc:
+    except psycopg.Error as exc:
         conn.close()
         raise SystemExit(
-            f"{exc}\n\n"
-            "The pub17 database has no pgvector. Install it and create the extension:\n"
-            "    sudo apt-get install -y postgresql-18-pgvector\n"
-            "    ./scripts/setup_db.sh"
+            f"{exc}\n\nThis server has no pgvector. Use the bundled container "
+            "(docker compose up -d), or install postgresql-18-pgvector on a "
+            "native server and run ./scripts/setup_db.sh."
         ) from None
     return conn
 
