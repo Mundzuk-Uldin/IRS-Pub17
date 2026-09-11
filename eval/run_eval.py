@@ -95,11 +95,17 @@ def answer_is_correct(text, question):
     and a strict retrieval hit must contain them. Usually the answer repeats
     the evidence, so they grade the answer too. When it needn't -- a yes/no
     question whose evidence is a dollar figure -- `grade_keys` override them
-    for grading only.
+    for grading only. A grading key can also be a list of equivalent phrasings,
+    for answers that paraphrase -- "isn't your qualifying child" and "can't be
+    your qualifying child" are the same verdict.
     """
     body = norm(text)
     keys = question.get("grade_keys", question["answer_keys"])
-    return all(norm(k) in body for k in keys)
+    # A key given as a list is a set of equivalent phrasings: any one passes.
+    return all(
+        any(norm(alt) in body for alt in key) if isinstance(key, list) else norm(key) in body
+        for key in keys
+    )
 
 
 def cites_a_source(text):

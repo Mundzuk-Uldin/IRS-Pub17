@@ -122,13 +122,43 @@ evidence keys for grading only (`eval/rescore.py`). `results/runs.csv` keeps
 the numbers as recorded, 85.0% and 96.7%.
 
 Generation now defaults to `claude-sonnet-5`. Answers are short extractions
-from supplied excerpts, Opus costs 2.5 times as much, and a spot check gave
-the same answer for $0.0082 instead of $0.0225. Answer accuracy has not been
-re-measured on Sonnet.
+from supplied excerpts, and Opus costs 2.5 times as much. Measured on all 60
+questions, Sonnet matches Opus at 98.3%, with q028 (the retrieval miss) the
+only wrong answer and a 100% citation rate, for $0.41 against $1.15. That run
+was recorded at 96.7% and rescored after a second paraphrase false negative:
+q050's correct "can't be your qualifying child" didn't match the key "isn't
+your qualifying child". A grading key can now list equivalent phrasings.
 
 **Latency** through Postgres, per query on the development GPU: dense
 retrieval 9 ms p50 / 10 ms p95, dense plus reranking 166 ms / 174 ms. The
 reranker runs in unoptimized fp32 and is almost all of it.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph ingest["Ingest (offline)"]
+        pdf["IRS PDFs<br/>SHA-256 pinned"] --> chunk["Section-aware chunker<br/>PDF outline, 1,508 chunks"]
+        chunk --> embed["bge-base-en-v1.5"]
+        embed --> pg[("Postgres 18 + pgvector<br/>HNSW index")]
+    end
+    subgraph request["POST /ask"]
+        q["question + JWT"] --> scope{"role scope"}
+        scope --> cap{"daily spend cap"}
+        cap --> dense["Dense top 20<br/>role's files only"]
+        dense --> rerank["bge-reranker-base<br/>keep 5"]
+        rerank --> gate{"top score >= 0.1?"}
+        gate -- no --> decline["Decline, no model call"]
+        gate -- yes --> llm["claude-sonnet-5<br/>cite excerpts or decline"]
+    end
+    pg --> dense
+    decline -.-> log[("query_log")]
+    llm -.-> log
+```
+
+Every request is logged, answered or not. Hybrid full-text search and
+contextual enrichment are built but off by default, because neither beat the
+path above.
 
 ## Why the numbers are trustworthy
 
@@ -215,7 +245,11 @@ tokens, cost, per-stage latency, and retrieved chunk ids.
   Near-topic questions the corpus can't answer score as high as real ones: the
   German VAT rate scored 0.9999. For those, the model's own "the excerpts don't
   say" is the safeguard, and this gate only saves paying for obvious misses.
-  Whether the model declines the other 11 hasn't been measured.
+  That safeguard holds. `eval/refusal_check.py` sent all 14 through the /ask
+  path: the gate stopped 3, and the model declined each of the other 11,
+  saying the excerpts don't contain the answer. That includes the Medicare
+  Part B premium, whose topic Pub 502 covers without giving the figure. None
+  got an invented answer. The check cost $0.10.
 - **Upstream failures are logged.** If the model API fails, the request is
   logged as `upstream_error` and the caller gets a 502. This was found live:
   the account ran out of credit during testing, and the first version returned
@@ -263,6 +297,11 @@ docker pull ghcr.io/mundzuk-uldin/irs-pub17:latest
 ```
 
 ## Setup
+
+These steps were tested on a fresh clone from GitHub: the corpus download and
+checksum check, `docker compose up`, ingest, and a `viewer` token's `curl`
+that returned the correct head-of-household deduction citing only the
+publications that role can see.
 
 ```bash
 pip install -r requirements.txt
@@ -325,6 +364,7 @@ eval/verify_questions.py   grounding check, exits nonzero on failure
 eval/run_eval.py           scores the pgvector pipeline, appends to runs.csv
 eval/rescore.py            re-grades saved answers after a grader change, free
 eval/calibrate_refusal.py  picks the refusal threshold; negatives in unanswerable.jsonl
+eval/refusal_check.py      sends the negatives through /ask's path; makes model calls
 tests/test_api.py          service tests, generation faked
 Dockerfile                 the API image, CPU inference, models built in
 .github/workflows/         CI (retrieval eval + service tests), CD (image to ghcr.io)
@@ -353,11 +393,26 @@ Each maps onto a planned Weekend 2 change — section-aware chunking that keeps
 tables whole, and contextual enrichment that prepends the parent section — which
 is the point of measuring before changing anything.
 
+## What I'd do next
+
+- **Query expansion for abbreviations.** q028's answer says "ACTC" and the
+  question spells the name out. It is the one retrieval miss, and dense,
+  full-text, and context-enriched retrieval all failed to reach it.
+- **A bigger eval with a held-out split.** At n=60 one question is 1.7
+  points, so only the chunking and reranking gains clear noise, and every
+  setting was chosen on the questions it is scored on.
+- **A judged answer check next to the exact keys,** calibrated against hand
+  grades. Exact keys have produced two false negatives on paraphrase so far.
+- **A faster reranker.** It is about 3 s of a 5 s request on CPU; ONNX export
+  or a smaller cross-encoder is the obvious first try.
+- **A second vector backend** (Qdrant) behind the same `retrieve()`
+  interface, for comparison.
+
 ## Known weak
 
 - One embedding model and one chunk size; neither has been swept.
-- The refusal gate catches 3 of 14 unanswerable questions. The model's own
-  refusals on the other 11 are unmeasured.
+- Refusal is measured on only 14 unanswerable questions. All 14 were
+  refused, but that is a small, hand-picked set.
 - CI takes about 24 minutes on GitHub's CPU runners, most of it embedding the
   corpus, once in each job. Only the models are cached between runs.
 - n=60, and every configuration is chosen on the same 60 questions it is scored
@@ -369,8 +424,8 @@ is the point of measuring before changing anything.
 - The HNSW graph is rebuilt randomly on every ingest, so with a 20-candidate
   pool a rebuild can move a question (q013 once). Runs aren't pinned to one
   index build.
-- Answer accuracy is measured once per configuration, on Opus, and not yet on
-  the Sonnet default.
+- Each answer-accuracy figure is a single run, and generation isn't
+  deterministic.
 - The corpus contradicts itself on q043. Pub 17 gives the age 60–63 401(k)
   limit as $37,750 (pp. 3 and 49), but its own $11,250 catch-up implies
   $23,500 + $11,250 = $34,750. The eval grades faithfulness to the corpus, so

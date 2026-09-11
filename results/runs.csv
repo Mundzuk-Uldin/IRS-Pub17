@@ -18,3 +18,4 @@ run_at,config,chunker,n,embed_model,gen_model,top_k,words_per_chunk,overlap,chun
 2026-09-11T18:57:50Z,section-context-dense-rerank-numpy,section-context,60,BAAI/bge-base-en-v1.5,,5,350,50,1508,90.0,95.0,95.0,0.922,96.7,,,,,,,
 2026-09-11T18:58:16Z,section-context-dense,section-context,60,BAAI/bge-base-en-v1.5,,5,350,50,1508,60.0,90.0,95.0,0.745,96.7,,,10,14,,,
 2026-09-11T18:58:16Z,section-context-dense-rerank,section-context,60,BAAI/bge-base-en-v1.5,,5,350,50,1508,90.0,95.0,95.0,0.922,96.7,,,168,174,,,
+2026-09-11T20:29:20Z,section-dense-rerank,section,60,BAAI/bge-base-en-v1.5,claude-sonnet-5,5,350,50,1508,90.0,98.3,98.3,0.939,98.3,96.7,100.0,299,443,1788,2544,0.4133
