@@ -1,2 +1,6 @@
-run_at,config,n,embed_model,gen_model,top_k,words_per_chunk,overlap,chunks_in_store,recall_at_1,recall_at_3,recall_at_5,mrr_at_5,answer_accuracy,citation_rate,retrieve_p50_ms,retrieve_p95_ms,generate_p50_ms,generate_p95_ms,total_cost_usd
-2026-09-07T17:17:48Z,baseline-naive-dense-numpy,60,BAAI/bge-base-en-v1.5,,5,350,50,1130,65.0,81.7,86.7,0.734,,,,,,,
+run_at,config,chunker,n,embed_model,gen_model,top_k,words_per_chunk,overlap,chunks_in_store,recall_at_1,recall_at_3,recall_at_5,mrr_at_5,loose_recall_at_5,answer_accuracy,citation_rate,retrieve_p50_ms,retrieve_p95_ms,generate_p50_ms,generate_p95_ms,total_cost_usd
+2026-09-11T12:00:26Z,section-heading-fold40-dense-numpy,section-heading,60,BAAI/bge-base-en-v1.5,,5,350,50,1324,53.3,83.3,93.3,0.682,96.7,,,,,,,
+2026-09-11T12:02:36Z,baseline-naive-dense-numpy,naive,60,BAAI/bge-base-en-v1.5,,5,350,50,1130,51.7,78.3,83.3,0.642,86.7,,,,,,,
+2026-09-11T12:02:42Z,section-dense-numpy,section,60,BAAI/bge-base-en-v1.5,,5,350,50,1508,63.3,86.7,91.7,0.753,95.0,,,,,,,
+2026-09-11T12:02:44Z,section-fold40-dense-numpy,section,60,BAAI/bge-base-en-v1.5,,5,350,50,1324,61.7,83.3,90.0,0.734,93.3,,,,,,,
+2026-09-11T12:04:06Z,section-heading-dense-numpy,section-heading,60,BAAI/bge-base-en-v1.5,,5,350,50,1508,55.0,85.0,93.3,0.696,96.7,,,,,,,

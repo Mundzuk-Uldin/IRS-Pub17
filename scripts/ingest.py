@@ -1,83 +1,55 @@
-"""Weekend 1 ingest: parse -> naive fixed-window chunk -> embed -> pgvector.
+"""Ingest: chunk -> embed -> pgvector.
 
-The chunking here is deliberately unstructured: fixed word windows that run
-straight through headings and tables. It is the baseline the Weekend 2
-section-aware chunker has to beat, so resist improving it.
+The chunking strategy comes from PUB17_CHUNKER (see pub17/chunking.py), so the
+same script loads the naive baseline or the section-aware chunks.
 
-Upserts are idempotent on (source_file, chunk_index), so a re-run replaces a
-publication in place rather than duplicating it.
+Re-ingesting a publication deletes its old chunks and inserts the new ones in a
+single transaction. That keeps it idempotent across chunkers too: switching
+strategy changes the chunk count, and an upsert keyed on chunk_index would
+leave the old strategy's tail behind.
 
-Usage:  python3 scripts/ingest.py [--reset] [pdf_stem ...]
+Usage:  PUB17_CHUNKER=section python3 scripts/ingest.py [--reset] [pdf_stem ...]
 """
 import argparse
 import sys
 import time
 from pathlib import Path
 
-import pymupdf as fitz
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pub17 import config
+from pub17.chunking import chunk_pdf
 from pub17.store import SCHEMA, connect, embedder
 
 
-def read_pdf(path):
-    """Return [(word, page_number), ...] so a chunk knows which pages it spans."""
-    tokens = []
-    with fitz.open(path) as doc:
-        for pageno, page in enumerate(doc, start=1):
-            for word in page.get_text("text").split():
-                tokens.append((word, pageno))
-    return tokens
-
-
-def chunk_document(tokens):
-    """Fixed word windows with overlap. No structure awareness -- that is the point.
-
-    Yields (text, page_start, page_end).
-    """
-    step = config.WORDS_PER_CHUNK - config.OVERLAP
-    for i in range(0, len(tokens), step):
-        window = tokens[i:i + config.WORDS_PER_CHUNK]
-        if len(window) < 20:
-            break
-        yield " ".join(w for w, _ in window), window[0][1], window[-1][1]
-
-
 def ingest_one(conn, model, stem, label):
-    path = config.RAW_DIR / f"{stem}.pdf"
-    tokens = read_pdf(path)
-    chunks = list(chunk_document(tokens))
+    chunks = chunk_pdf(stem)
 
     # bge embeds documents bare; only queries get the instruction prefix.
     vecs = model.encode(
-        [c[0] for c in chunks],
+        [c["text"] for c in chunks],
         batch_size=32,
         normalize_embeddings=True,
         show_progress_bar=False,
         convert_to_numpy=True,
     )
 
-    with conn.cursor() as cur:
+    source = f"{stem}.pdf"
+    with conn.transaction(), conn.cursor() as cur:
+        cur.execute("DELETE FROM chunks WHERE source_file = %s", (source,))
         cur.executemany(
             """
             INSERT INTO chunks
-                (publication, source_file, page_start, page_end, chunk_index, text, embedding)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (source_file, chunk_index) DO UPDATE SET
-                publication = EXCLUDED.publication,
-                page_start  = EXCLUDED.page_start,
-                page_end    = EXCLUDED.page_end,
-                text        = EXCLUDED.text,
-                embedding   = EXCLUDED.embedding
+                (publication, source_file, page_start, page_end, section,
+                 chunk_index, text, embedding)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             [
-                (label, f"{stem}.pdf", start, end, i, text, vec)
-                for i, ((text, start, end), vec) in enumerate(zip(chunks, vecs))
+                (label, source, c["page_start"], c["page_end"], c["section"], i, c["text"], vec)
+                for i, (c, vec) in enumerate(zip(chunks, vecs))
             ],
         )
-    return len(tokens), len(chunks)
+    return sum(len(c["text"].split()) for c in chunks), len(chunks)
 
 
 def main():
@@ -91,7 +63,7 @@ def main():
     if unknown:
         sys.exit(f"unknown publication stem(s): {', '.join(unknown)}")
 
-    print(f"loading {config.EMBED_MODEL} ...")
+    print(f"chunker={config.CHUNKER}, loading {config.EMBED_MODEL} ...")
     model = embedder()
     print(f"  device: {model.device}")
 

@@ -6,9 +6,13 @@ standard would silently invalidate every comparison the moment Weekend 2
 changes the chunker -- which is the one comparison this whole file exists to
 make.
 
-A retrieved chunk counts as a hit if it overlaps a gold page, or if it contains
-the gold span verbatim. The span check is what keeps the metric honest when a
-chunk straddles a page boundary.
+A retrieved chunk counts as a hit only if it actually contains the answer:
+either the verbatim gold span, or every answer key while sitting on a gold
+page. The Weekend 1 rule -- page overlap alone -- is still reported as
+`loose_recall_at_5`, because it overstated every configuration: a chunk on the
+right page is not necessarily a chunk a model can answer from, and
+section-aware chunking produces heading-sized fragments that make the gap
+worse.
 
 Usage:
   python3 eval/run_eval.py --retrieval-only          # free, no model calls
@@ -34,9 +38,9 @@ QUESTIONS = Path(__file__).resolve().parent / "questions.jsonl"
 RUNS_CSV = config.RESULTS_DIR / "runs.csv"
 
 RUN_FIELDS = [
-    "run_at", "config", "n", "embed_model", "gen_model", "top_k",
+    "run_at", "config", "chunker", "n", "embed_model", "gen_model", "top_k",
     "words_per_chunk", "overlap", "chunks_in_store",
-    "recall_at_1", "recall_at_3", "recall_at_5", "mrr_at_5",
+    "recall_at_1", "recall_at_3", "recall_at_5", "mrr_at_5", "loose_recall_at_5",
     "answer_accuracy", "citation_rate",
     "retrieve_p50_ms", "retrieve_p95_ms", "generate_p50_ms", "generate_p95_ms",
     "total_cost_usd",
@@ -52,18 +56,30 @@ def load_questions():
     return [json.loads(l) for l in QUESTIONS.read_text().splitlines() if l.strip()]
 
 
+def on_gold_page(chunk, question):
+    return any(
+        chunk["source_file"] == fname and chunk["page_start"] <= pageno <= chunk["page_end"]
+        for fname, pageno in question["gold"]
+    )
+
+
 def is_hit(chunk, question):
-    """Does this chunk contain what the question needed?"""
-    for fname, pageno in question["gold"]:
-        if chunk["source_file"] == fname and chunk["page_start"] <= pageno <= chunk["page_end"]:
-            return True
-    return norm(question["gold_span"]) in norm(chunk["text"])
+    """Does this chunk actually contain the answer?"""
+    text = norm(chunk["text"])
+    if norm(question["gold_span"]) in text:
+        return True
+    return on_gold_page(chunk, question) and all(norm(k) in text for k in question["answer_keys"])
 
 
-def first_hit_rank(chunks, question):
+def loose_hit(chunk, question):
+    """The Weekend 1 rule: page overlap or verbatim span. Reported for comparison."""
+    return on_gold_page(chunk, question) or norm(question["gold_span"]) in norm(chunk["text"])
+
+
+def first_hit_rank(chunks, question, hit=is_hit):
     """1-indexed rank of the first hit, or None."""
     for rank, c in enumerate(chunks, start=1):
-        if is_hit(c, question):
+        if hit(c, question):
             return rank
     return None
 
@@ -116,7 +132,7 @@ def main():
     run_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     detail_path = config.RESULTS_DIR / f"{args.config_name}-{run_at.replace(':', '')}.jsonl"
 
-    ranks, correct, cited = [], [], []
+    ranks, loose_ranks, correct, cited = [], [], [], []
     retrieve_ms, generate_ms, costs = [], [], []
 
     with connect() as conn, detail_path.open("w") as detail:
@@ -131,6 +147,7 @@ def main():
 
             rank = first_hit_rank(chunks, q)
             ranks.append(rank)
+            loose_ranks.append(first_hit_rank(chunks, q, hit=loose_hit))
 
             row = {
                 "id": q["id"],
@@ -167,6 +184,7 @@ def main():
     summary = {
         "run_at": run_at,
         "config": args.config_name,
+        "chunker": config.CHUNKER,
         "n": n,
         "embed_model": config.EMBED_MODEL,
         "gen_model": config.GEN_MODEL if generate else "",
@@ -178,6 +196,7 @@ def main():
         "recall_at_3": round(pct([r is not None and r <= 3 for r in ranks]), 1),
         "recall_at_5": round(pct([r is not None and r <= 5 for r in ranks]), 1),
         "mrr_at_5": round(statistics.fmean([1 / r if r else 0.0 for r in ranks]), 3),
+        "loose_recall_at_5": round(pct([r is not None and r <= 5 for r in loose_ranks]), 1),
         "answer_accuracy": round(pct(correct), 1) if correct else "",
         "citation_rate": round(pct(cited), 1) if cited else "",
         "retrieve_p50_ms": p(retrieve_ms, 50),
@@ -199,6 +218,7 @@ def main():
     print(f"  recall@3        {summary['recall_at_3']:>6}%")
     print(f"  recall@5        {summary['recall_at_5']:>6}%")
     print(f"  MRR@5           {summary['mrr_at_5']:>6}")
+    print(f"  loose recall@5  {summary['loose_recall_at_5']:>6}%  (page overlap only)")
     if correct:
         print(f"  answer accuracy {summary['answer_accuracy']:>6}%")
         print(f"  citation rate   {summary['citation_rate']:>6}%")

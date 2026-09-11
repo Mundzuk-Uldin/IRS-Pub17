@@ -4,18 +4,37 @@ Retrieval-augmented question answering over ~2,000 pages of IRS tax year 2025
 publications, built to measure what each retrieval technique is actually worth
 rather than to assemble a stack.
 
-**Status:** Weekend 1 (end-to-end pipeline) and the evaluation set are done.
-Weekend 2 (section-aware chunking, contextual enrichment, hybrid search,
-reranking) is next; the results table below has one row and is meant to grow.
+**Status:** Weekend 1 and the evaluation set are done. Of the four Weekend 2
+changes, section-aware chunking is measured. Reranking is next. Contextual
+enrichment is waiting on an Anthropic API key, and Postgres full-text hybrid
+search is waiting on pgvector.
 
 ## Results
 
-| Configuration | recall@1 | recall@3 | recall@5 | MRR@5 | answer acc. |
-|---|---|---|---|---|---|
-| Naive 350-word windows, dense only (baseline) | 65.0% | 81.7% | 86.7% | 0.734 | pending |
+| Configuration | recall@1 | recall@3 | recall@5 | MRR@5 | loose recall@5 | answer acc. |
+|---|---|---|---|---|---|---|
+| Naive 350-word windows, dense only (baseline) | 51.7% | 78.3% | 83.3% | 0.642 | 86.7% | pending |
+| **Section-aware chunking** | **63.3%** | **86.7%** | **91.7%** | **0.753** | 95.0% | pending |
+| *rejected:* + heading path in the embedded text | 55.0% | 85.0% | 93.3% | 0.696 | 96.7% | — |
+| *rejected:* + fold sections under 40 words | 61.7% | 83.3% | 90.0% | 0.734 | 93.3% | — |
 
-n=60 questions, `bge-base-en-v1.5`, top-k=5. Measured by
-`eval/baseline_numpy.py`; every run is appended to `results/runs.csv`.
+n=60 questions, `bge-base-en-v1.5`, top-k=5, 350-word chunk ceiling. Measured
+by `eval/baseline_numpy.py`; every run is appended to `results/runs.csv`.
+
+**One question is 1.7 points.** With n=60, only naive → section clears that
+margin comfortably: +11.6 points at recall@1 and +8.4 at recall@5, seven and
+five questions. The two rejected variants sit within a question or two of the
+row above them, so they are recorded as measured, not as findings.
+
+Section chunking fixed 8 of the baseline's 10 misses (the married-filing-
+separately `$5` threshold, both premium tax credit examples, the 401(k) and
+adoption limits, the overtime cap, the car-loan income limit, the MFS capital
+loss limit)
+and introduced 3 new ones (q012, q024, q029).
+
+Putting the heading path into the embedded text bought one question at
+recall@5 and cost five at recall@1. It was not adopted. The reranker reorders
+the top candidates anyway, so rank-1 precision is the better signal to keep.
 
 ## Why the numbers are trustworthy
 
@@ -25,8 +44,17 @@ falsifiable rather than plausible.
 **Gold is anchored on pages and verbatim spans, not chunk ids.** Chunk ids do
 not survive a re-chunk. Anchoring gold to them would mean Weekend 2's new
 chunker silently invalidates the baseline it is supposed to be measured
-against — the one comparison the project exists to make. A retrieved chunk
-counts as a hit if it overlaps a gold page or contains the gold span verbatim.
+against — the one comparison the project exists to make.
+
+**A hit means the chunk contains the answer.** A retrieved chunk counts only if
+it holds the verbatim gold span, or sits on a gold page and contains every
+answer key. The first version of the harness accepted page overlap alone, and
+that overstated every configuration, the baseline included (86.7% loose against
+83.3% strict). Section chunking makes the gap matter: the 1040 instructions
+bookmark every form line, so a pure split-on-outline yields hundreds of
+heading-sized fragments like `Line 1a` that sit on the right page and hold
+nothing. The loose number is still reported, and the Weekend 1 rows under the
+old rule are kept in `results/runs_v1_loose.csv`.
 
 **Every question is checked against the PDFs.** `eval/verify_questions.py`
 confirms that each gold page exists, that the answer-bearing span appears
@@ -103,6 +131,7 @@ targets a native Postgres rather than a container.
 
 ```
 pub17/config.py            settings, all env-overridable
+pub17/chunking.py          naive and section-aware chunkers (PUB17_CHUNKER)
 pub17/store.py             pgvector schema, dense retrieval
 pub17/generate.py          cited answer generation
 scripts/ingest.py          parse -> chunk -> embed -> idempotent upsert
@@ -111,7 +140,8 @@ eval/questions.jsonl       60 verified questions
 eval/verify_questions.py   grounding check, exits nonzero on failure
 eval/run_eval.py           scores the pgvector pipeline, appends to runs.csv
 eval/baseline_numpy.py     scores retrieval with no services
-results/runs.csv           every configuration ever measured
+results/runs.csv           every configuration measured under the strict hit rule
+results/runs_v1_loose.csv  Weekend 1 rows under the retired page-overlap rule
 ```
 
 ## What the baseline gets wrong
@@ -136,6 +166,9 @@ is the point of measuring before changing anything.
 ## Known weak
 
 - One embedding model and one chunk size; neither has been swept.
+- n=60, and every configuration is chosen on the same 60 questions it is scored
+  on. There is no held-out split, so small wins are indistinguishable from
+  fitting the eval.
 - Retrieval is dense-only, so exact-phrase questions have no lexical fallback.
 - Answer accuracy is unmeasured pending the generation run.
 - Exact-key grading cannot tell a correct answer from one that states the right

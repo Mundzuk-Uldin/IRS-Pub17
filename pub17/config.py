@@ -27,13 +27,24 @@ GEN_EFFORT = os.environ.get("PUB17_GEN_EFFORT", "low")
 
 TOP_K = int(os.environ.get("PUB17_TOP_K", "5"))
 
-# Weekend 1 chunking: fixed word windows, no structure awareness. That is the
-# point -- it is the baseline Weekend 2 has to beat.
+# naive | section | section-heading -- see pub17/chunking.py.
+CHUNKER = os.environ.get("PUB17_CHUNKER", "naive")
+
+# Upper bound on chunk size for every strategy. OVERLAP applies to naive only;
+# section chunks start at headings and don't need it.
 WORDS_PER_CHUNK = int(os.environ.get("PUB17_WORDS_PER_CHUNK", "350"))
 OVERLAP = int(os.environ.get("PUB17_OVERLAP", "50"))
 
+# Section chunkers can fold sections shorter than this into the next one.
+# Measured and rejected: at 40 words it cost a question at recall@1 and @5 and
+# gained nothing (results/runs.csv, section-fold40 vs section), so it is off.
+MIN_SECTION_WORDS = int(os.environ.get("PUB17_MIN_SECTION_WORDS", "0"))
+
 # Named so the eval CSV records which pipeline produced a row.
-CONFIG_NAME = os.environ.get("PUB17_CONFIG", "baseline-naive-dense")
+CONFIG_NAME = os.environ.get(
+    "PUB17_CONFIG",
+    "baseline-naive-dense" if CHUNKER == "naive" else f"{CHUNKER}-dense",
+)
 
 PUBLICATIONS = {
     "p17": "Publication 17 (Your Federal Income Tax)",

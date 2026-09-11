@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     source_file  TEXT NOT NULL,
     page_start   INT  NOT NULL,
     page_end     INT  NOT NULL,
+    section      TEXT NOT NULL DEFAULT '',
     chunk_index  INT  NOT NULL,
     text         TEXT NOT NULL,
     embedding    vector({config.EMBED_DIM}),

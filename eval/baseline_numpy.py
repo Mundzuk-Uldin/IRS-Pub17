@@ -26,23 +26,18 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "scripts"))
 
 from pub17 import config
+from pub17.chunking import chunk_pdf
 from pub17.store import embedder
-from ingest import chunk_document, read_pdf
-from run_eval import RUNS_CSV, RUN_FIELDS, first_hit_rank, load_questions
+from run_eval import RUNS_CSV, RUN_FIELDS, first_hit_rank, load_questions, loose_hit
 
 
 def build_index(model):
     rows = []
     for stem, label in config.PUBLICATIONS.items():
-        tokens = read_pdf(config.RAW_DIR / f"{stem}.pdf")
-        for i, (text, start, end) in enumerate(chunk_document(tokens)):
-            rows.append({
-                "publication": label, "source_file": f"{stem}.pdf",
-                "page_start": start, "page_end": end, "chunk_index": i, "text": text,
-            })
+        for i, chunk in enumerate(chunk_pdf(stem)):
+            rows.append(dict(chunk, publication=label, source_file=f"{stem}.pdf", chunk_index=i))
     matrix = model.encode(
         [r["text"] for r in rows], batch_size=128, normalize_embeddings=True,
         convert_to_numpy=True, show_progress_bar=False,
@@ -57,7 +52,7 @@ def main():
     args = ap.parse_args()
 
     model = embedder()
-    print(f"embedding corpus on {model.device} ...")
+    print(f"chunker={config.CHUNKER}, embedding corpus on {model.device} ...")
     rows, matrix = build_index(model)
     print(f"  {len(rows):,} chunks")
 
@@ -68,7 +63,7 @@ def main():
     )
     sims = qmat @ matrix.T
 
-    ranks = []
+    ranks, loose_ranks = [], []
     by_topic, hit_topic = Counter(), Counter()
     misses = []
     for qi, q in enumerate(questions):
@@ -76,6 +71,7 @@ def main():
         chunks = [dict(rows[j], similarity=float(sims[qi][j])) for j in top]
         rank = first_hit_rank(chunks, q)
         ranks.append(rank)
+        loose_ranks.append(first_hit_rank(chunks, q, hit=loose_hit))
         by_topic[q["topic"]] += 1
         if rank:
             hit_topic[q["topic"]] += 1
@@ -89,9 +85,11 @@ def main():
     r3 = pct(lambda r: r is not None and r <= 3)
     r5 = pct(lambda r: r is not None and r <= 5)
     mrr = float(np.mean([1 / r if r else 0.0 for r in ranks]))
+    loose5 = 100.0 * sum(1 for r in loose_ranks if r is not None and r <= 5) / len(loose_ranks)
 
     print(f"\n{config.CONFIG_NAME} (numpy exhaustive, n={len(questions)})")
     print(f"  recall@1 {r1:.1f}%   recall@3 {r3:.1f}%   recall@5 {r5:.1f}%   MRR@5 {mrr:.3f}")
+    print(f"  loose recall@5 {loose5:.1f}%  (page overlap only)")
     print("\n  per topic (hit/total):")
     for topic in sorted(by_topic):
         print(f"    {topic:22s} {hit_topic[topic]}/{by_topic[topic]}")
@@ -106,12 +104,13 @@ def main():
         row = {f: "" for f in RUN_FIELDS}
         row.update(
             run_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            config=f"{config.CONFIG_NAME}-numpy",
+            config=f"{config.CONFIG_NAME}-numpy", chunker=config.CHUNKER,
             n=len(questions), embed_model=config.EMBED_MODEL, top_k=args.k,
             words_per_chunk=config.WORDS_PER_CHUNK, overlap=config.OVERLAP,
             chunks_in_store=len(rows),
             recall_at_1=round(r1, 1), recall_at_3=round(r3, 1),
             recall_at_5=round(r5, 1), mrr_at_5=round(mrr, 3),
+            loose_recall_at_5=round(loose5, 1),
         )
         write_header = not RUNS_CSV.exists()
         with RUNS_CSV.open("a", newline="") as f:
