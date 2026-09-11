@@ -5,3 +5,5 @@ __pycache__/
 data/raw/*.pdf
 # Per-question run detail; results/runs.csv is committed, the rest is noise.
 results/*.jsonl
+# Local secrets (PUB17_JWT_SECRET), read by docker compose. Never committed.
+.env

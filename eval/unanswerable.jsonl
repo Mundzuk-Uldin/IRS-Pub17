@@ -1,0 +1,14 @@
+{"id":"n01","question":"What is the federal minimum wage?","why":"Labor law, not income tax.","absent_terms":["$7.25","minimum wage"]}
+{"id":"n02","question":"What is the 2025 federal estate tax basic exclusion amount?","why":"The $13,990,000 exclusion is in estate and gift instructions, not this corpus.","absent_terms":["13,990,000"]}
+{"id":"n03","question":"What was the standard deduction for a single filer in 2015?","why":"The corpus is tax year 2025; the 2015 amount was $6,300, which appears here only as tax-table rows.","absent_terms":["6,300"]}
+{"id":"n04","question":"What is the maximum HSA contribution for family coverage in 2025?","why":"The $8,550 family limit is in Pub 969; the figure appears here only as tax-table rows.","absent_terms":["8,550"]}
+{"id":"n05","question":"What is the California state income tax rate for 2025?","why":"The corpus is federal only.","absent_terms":["FTB","Franchise Tax Board"]}
+{"id":"n06","question":"How do I file a Canadian T1 income tax return?","why":"Foreign national return, out of scope.","absent_terms":["T1 General","Canada Revenue Agency"]}
+{"id":"n07","question":"What is the VAT rate in Germany?","why":"Foreign consumption tax, out of scope.","absent_terms":["Germany","value-added tax"]}
+{"id":"n08","question":"What is the capital of France?","why":"Not a tax question.","absent_terms":["Paris"]}
+{"id":"n09","question":"What is the corporate income tax rate for a C corporation?","why":"Corporate returns are not in this corpus; it mentions Form 1120-S only as a K-1 source.","absent_terms":["C corporation","corporate tax rate"]}
+{"id":"n10","question":"What is the 2025 annual gift tax exclusion per recipient?","why":"The $19,000 exclusion is in Form 709 instructions, not this corpus.","absent_terms":["gift tax exclusion","annual exclusion"]}
+{"id":"n11","question":"How many vacation days do federal employees get per year?","why":"Hard negative: the corpus covers lump-sum payments for accrued annual leave, not how much leave accrues.","absent_terms":["days of annual leave","hours of annual leave"]}
+{"id":"n12","question":"What is the mileage reimbursement rate for federal employees traveling by airplane?","why":"GSA travel rates, not tax rules.","absent_terms":["GSA","privately owned airplane"]}
+{"id":"n13","question":"What is the standard monthly Medicare Part B premium for 2025?","why":"Hard negative: Pub 502 says Part B premiums are deductible but never gives the amount.","absent_terms":["$185.00","185.00"]}
+{"id":"n14","question":"Who is the current Commissioner of the IRS?","why":"Agency leadership, not tax rules.","absent_terms":["Commissioner of Internal Revenue","IRS Commissioner"]}

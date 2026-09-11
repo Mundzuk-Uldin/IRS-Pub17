@@ -1,4 +1,6 @@
-# Postgres 18 with pgvector for the pub17 pipeline:  docker compose up -d
+# The pub17 stack.
+#   docker compose up -d --wait db    # just Postgres + pgvector, for ingest and evals
+#   docker compose up -d --wait       # Postgres and the API on localhost:8000
 #
 # Host port 5434 because the dev machine already runs native Postgres on 5432
 # (PG18) and has a PG17 cluster registered on 5433.
@@ -20,6 +22,26 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PUB17_DSN: postgresql://postgres:pub17@db:5432/pub17
+      # Both are read from your shell when compose runs; neither is written
+      # into this file. The API refuses to start without the JWT secret.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      PUB17_JWT_SECRET: ${PUB17_JWT_SECRET:-}
+      PUB17_DAILY_SPEND_CAP_USD: ${PUB17_DAILY_SPEND_CAP_USD:-1.00}
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
 
 volumes:
   pgdata:

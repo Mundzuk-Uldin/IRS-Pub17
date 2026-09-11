@@ -53,6 +53,15 @@ CREATE TABLE IF NOT EXISTS query_log (
     generate_ms    INT,
     refused        BOOLEAN NOT NULL DEFAULT FALSE
 );
+
+-- Columns added for the HTTP service: who asked, under which role, why a
+-- request was refused, and the reranker stage's own score and latency.
+ALTER TABLE query_log
+    ADD COLUMN IF NOT EXISTS subject TEXT,
+    ADD COLUMN IF NOT EXISTS role TEXT,
+    ADD COLUMN IF NOT EXISTS refusal_reason TEXT,
+    ADD COLUMN IF NOT EXISTS top_rerank_score REAL,
+    ADD COLUMN IF NOT EXISTS rerank_ms INT;
 """
 
 
@@ -93,18 +102,26 @@ def embed_query(question):
     )
 
 
-def search_dense(conn, question, k=None):
-    """Top-k chunks by cosine similarity. Returns a list of dicts."""
+def search_dense(conn, question, k=None, sources=None):
+    """Top-k chunks by cosine similarity, optionally only from `sources` files."""
     k = k or config.TOP_K
     qvec = embed_query(question)
+    where, params = "", [qvec]
+    if sources:
+        where = "WHERE source_file = ANY(%s)"
+        params.append(list(sources))
+        # A filtered HNSW scan stops after ef_search candidates and can return
+        # fewer than k rows; iterative scan keeps going (pgvector >= 0.8).
+        conn.execute("SET hnsw.iterative_scan = strict_order")
     rows = conn.execute(
         f"""
         SELECT {_CHUNK_COLS}, 1 - (embedding <=> %s) AS similarity
         FROM chunks
+        {where}
         ORDER BY embedding <=> %s
         LIMIT %s
         """,
-        (qvec, qvec, k),
+        (*params, qvec, k),
     ).fetchall()
     return _as_dicts(rows, "similarity")
 

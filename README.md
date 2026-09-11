@@ -8,7 +8,8 @@ rather than to assemble a stack.
 changes are measured. Section-aware chunking and cross-encoder reranking were
 adopted; Postgres full-text hybrid search and contextual enrichment were
 rejected. Retrieval and generation run end to end against pgvector in Docker,
-and answer accuracy is measured.
+and answer accuracy is measured. The HTTP service is built, with JWT roles, a
+spend cap, a refusal threshold, and a log of every request.
 
 ## Results
 
@@ -189,6 +190,49 @@ itemized 1
 Pub 17, Pub 501, Pub 502, the Form 1040 instructions, and Schedules 1, 1-A, 2,
 and 3 — 338,000 words, 1,130 chunks at the baseline chunk size.
 
+## The service
+
+`pub17/api.py` wraps the pipeline in FastAPI. `POST /ask` takes a question and
+returns a cited answer. Each request passes three gates, and every outcome,
+answered, refused, or failed, is written to `query_log` with the caller, role,
+tokens, cost, per-stage latency, and retrieved chunk ids.
+
+- **JWT roles scope the corpus.** `viewer` sees Pubs 17, 501, and 502;
+  `preparer` also sees the 1040 instructions and schedules; `admin` sees
+  everything plus `/admin/logs` and `/admin/spend`. Retrieval is filtered to
+  the role's files in SQL, so a scoped user can't get a chunk from outside the
+  scope, even as a citation. Tokens are HS256, the secret must be at least 32
+  bytes, and the service won't start without it.
+- **A daily spend cap** (`PUB17_DAILY_SPEND_CAP_USD`, default $1) is checked
+  against logged spend before any model call. Past it, requests get a 429.
+- **A refusal threshold** on the reranker's best score declines without
+  calling the model. `eval/calibrate_refusal.py` chose 0.1 using the 60
+  answerable questions and 14 verified unanswerable ones. It's the highest cut
+  that refuses no answerable question (the lowest scores 0.137), and it
+  catches only 3 of the 14 unanswerable ones, the clearly off-topic ones.
+  Near-topic questions the corpus can't answer score as high as real ones: the
+  German VAT rate scored 0.9999. For those, the model's own "the excerpts don't
+  say" is the safeguard, and this gate only saves paying for obvious misses.
+  Whether the model declines the other 11 hasn't been measured.
+- **Upstream failures are logged.** If the model API fails, the request is
+  logged as `upstream_error` and the caller gets a 502. This was found live:
+  the account ran out of credit during testing, and the first version returned
+  a bare 500 and logged nothing.
+
+In the container the models run on CPU. Reranking 20 candidates takes about
+3 s there against 170 ms on the development GPU, and the image is 5 GB with
+both models built in. `tests/test_api.py` covers auth, role scoping, both
+refusal gates, the upstream-error path, and the log. It runs against the real
+database and models with generation faked, so it costs nothing.
+
+**CI** (`.github/workflows/retrieval-eval.yml`) is retrieval-only. It runs on
+demand and on pull requests that touch the pipeline or the eval, never on
+every push, and needs no API key or database. It fails if the downloaded
+corpus doesn't match `data/raw/SHA256SUMS`: the IRS republishes PDFs under the
+same URLs, and every page number in the eval refers to these exact files. It
+also fails if strict recall@5 drops below 96.7%, one question under the
+adopted 98.3%. It hasn't run on GitHub yet, because the repo has no remote.
+
 ## Setup
 
 ```bash
@@ -207,7 +251,7 @@ PUB17_CHUNKER=naive PUB17_RERANK=0 python3 eval/baseline_numpy.py   # the Weeken
 For the full pipeline (pgvector storage, generation, latency and cost metrics):
 
 ```bash
-docker compose up -d --wait     # Postgres 18 + pgvector on localhost:5434
+docker compose up -d --wait db  # Postgres 18 + pgvector on localhost:5434
 python3 scripts/ingest.py
 export ANTHROPIC_API_KEY=sk-ant-...
 python3 scripts/ask.py "what is the standard deduction for a single filer?"
@@ -219,6 +263,18 @@ python3 eval/rescore.py results/<run>.jsonl      # re-grade saved answers, free
 To use a native Postgres instead, install pgvector, run
 `./scripts/setup_db.sh`, and set `PUB17_DSN`.
 
+The service:
+
+```bash
+python3 -c "import secrets; print('PUB17_JWT_SECRET=' + secrets.token_urlsafe(48))" > .env  # once; git-ignored
+docker compose up -d --wait        # Postgres + the API on localhost:8000
+set -a; . ./.env; set +a
+TOKEN=$(python3 scripts/mint_token.py --role preparer --sub you)
+curl -s -X POST localhost:8000/ask -H "Authorization: Bearer $TOKEN" \
+     -H 'Content-Type: application/json' -d '{"question": "How much of my 2025 tips can I deduct?"}'
+python3 -m pytest                  # service tests; generation is faked, so they're free
+```
+
 ## Layout
 
 ```
@@ -226,16 +282,24 @@ docker-compose.yml         Postgres 18 + pgvector on localhost:5434
 pub17/config.py            settings, all env-overridable
 pub17/chunking.py          naive and section-aware chunkers (PUB17_CHUNKER)
 pub17/rerank.py            cross-encoder reranking (PUB17_RERANK)
+pub17/api.py               FastAPI service: /ask, /admin/logs, /admin/spend
+pub17/auth.py              JWT roles and the collections each may query
 pub17/store.py             pgvector schema; retrieve() = dense (or hybrid) + rerank
 pub17/generate.py          cited answer generation
 scripts/ingest.py          parse -> chunk -> embed -> idempotent upsert
 scripts/ask.py             ask a question, get a cited answer
+scripts/mint_token.py      issue a JWT for a role
 scripts/summarize_sections.py  one generated context per section, cached
 data/section_summaries.jsonl   the 675 contexts, so enrichment reruns for free
 eval/questions.jsonl       60 verified questions
 eval/verify_questions.py   grounding check, exits nonzero on failure
 eval/run_eval.py           scores the pgvector pipeline, appends to runs.csv
 eval/rescore.py            re-grades saved answers after a grader change, free
+eval/calibrate_refusal.py  picks the refusal threshold; negatives in unanswerable.jsonl
+tests/test_api.py          service tests, generation faked
+Dockerfile                 the API image, CPU inference, models built in
+.github/workflows/         retrieval-only eval, on demand and on pull requests
+data/raw/SHA256SUMS        the exact PDFs the eval was built on
 eval/baseline_numpy.py     scores retrieval with no services
 results/runs.csv           every configuration measured under the strict hit rule
 results/runs_v1_loose.csv  Weekend 1 rows under the retired page-overlap rule
@@ -263,6 +327,9 @@ is the point of measuring before changing anything.
 ## Known weak
 
 - One embedding model and one chunk size; neither has been swept.
+- The refusal gate catches 3 of 14 unanswerable questions. The model's own
+  refusals on the other 11 are unmeasured.
+- The CI workflow hasn't run on GitHub; the repository has no remote yet.
 - n=60, and every configuration is chosen on the same 60 questions it is scored
   on. There is no held-out split, so small wins are indistinguishable from
   fitting the eval.

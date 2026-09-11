@@ -1,0 +1,6 @@
+.git
+data/
+results/
+eval/
+tests/
+**/__pycache__

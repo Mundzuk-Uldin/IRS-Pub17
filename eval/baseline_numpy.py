@@ -50,6 +50,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", action="store_true", help="append the run to results/runs.csv")
     ap.add_argument("-k", type=int, default=config.TOP_K)
+    ap.add_argument("--min-recall5", type=float,
+                    help="exit nonzero if strict recall@5 falls below this percentage (for CI)")
     args = ap.parse_args()
 
     model = embedder()
@@ -123,6 +125,9 @@ def main():
                 w.writeheader()
             w.writerow(row)
         print(f"\nappended to {RUNS_CSV}")
+    if args.min_recall5 is not None and r5 < args.min_recall5:
+        print(f"\nFAIL: recall@5 {r5:.1f}% is below the required {args.min_recall5:.1f}%")
+        return 1
     return 0
 
 

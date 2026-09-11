@@ -76,3 +76,16 @@ PUBLICATIONS = {
 }
 
 TAX_YEAR = 2025
+
+# HTTP service (pub17/api.py). The cap is checked against logged spend before
+# each model call; the threshold is the reranker score under which the service
+# declines instead of paying a model to guess (eval/calibrate_refusal.py).
+DAILY_SPEND_CAP_USD = float(os.environ.get("PUB17_DAILY_SPEND_CAP_USD", "1.00"))
+#
+# 0.1 is the highest cut that refuses none of the 60 answerable questions
+# (lowest: 0.137). It catches only 3 of the 14 unanswerable ones -- the clearly
+# off-topic ones. Near-topic questions the corpus can't answer score as high
+# as real ones (the German VAT rate scored 0.9999), so for those the model's
+# own "the excerpts don't say" is the real safeguard; this gate just saves
+# paying for it on obvious misses.
+MIN_RERANK_SCORE = float(os.environ.get("PUB17_MIN_RERANK_SCORE", "0.1"))
