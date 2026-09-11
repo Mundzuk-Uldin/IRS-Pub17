@@ -1,9 +1,12 @@
 name: retrieval-eval
 
-# Retrieval-only: no API key, no database, no spend. Deliberately not on every
-# push -- run it by hand, or it runs on pull requests that change the pipeline
-# or the eval. It fails if the corpus changed or strict recall@5 drops more
-# than one question below the adopted 98.3%.
+# CI. Two jobs, neither with an API key or any spend, and deliberately not on
+# every push -- run by hand, or on pull requests that change the pipeline, the
+# eval, or the service.
+#   retrieval  the retrieval-only eval, in memory: fails if the corpus changed
+#              or strict recall@5 drops more than one question below 98.3%.
+#   tests      the service tests against a real pgvector database, with
+#              generation faked by the tests themselves.
 on:
   workflow_dispatch:
   pull_request:
@@ -11,6 +14,7 @@ on:
       - "pub17/**"
       - "eval/**"
       - "scripts/ingest.py"
+      - "tests/**"
       - "requirements.txt"
 
 jobs:
@@ -37,3 +41,39 @@ jobs:
         run: python eval/verify_questions.py
       - name: Retrieval recall (section chunks + reranking)
         run: python eval/baseline_numpy.py --min-recall5 96.7
+
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      db:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pub17
+          POSTGRES_DB: pub17
+        # Same host port as docker-compose.yml, so the default DSN works.
+        ports: ["5434:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pub17"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install (CPU torch)
+        run: |
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install -r requirements.txt
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-bge-base-en-v1.5-bge-reranker-base
+      - name: Fetch and verify the corpus
+        run: ./scripts/download_corpus.sh
+      - name: Ingest section chunks
+        run: python scripts/ingest.py
+      - name: Service tests
+        run: python -m pytest -q
