@@ -221,6 +221,14 @@ tokens, cost, per-stage latency, and retrieved chunk ids.
   the account ran out of credit during testing, and the first version returned
   a bare 500 and logged nothing.
 
+The first real request through the running container, "How much of my 2025
+tips can I deduct?" as a `preparer`, returned the correct answer (up to
+$25,000, limited above $150,000 MAGI or $300,000 married filing jointly),
+citing Pub 17 and the Schedule 1-A instructions. It cost $0.0079 on Sonnet
+(3,127 tokens in, 162 out), took 210 ms to retrieve, 3,017 ms to rerank, and
+2,158 ms to generate, and was logged with all three timings and its five
+chunk ids.
+
 In the container the models run on CPU. Reranking 20 candidates takes about
 3 s there against 170 ms on the development GPU, and the image is 5 GB with
 both models built in. `tests/test_api.py` covers auth, role scoping, both
