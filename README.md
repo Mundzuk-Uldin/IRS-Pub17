@@ -90,7 +90,7 @@ whose answer chunk isn't in the lexical top 50. It cost 15 ms more at p50 and
 51 ms more at p95, so it is off by default (`PUB17_HYBRID=1`). The fusion depth
 was fixed at 50 and not swept.
 
-**Contextual enrichment was rejected.** `claude-sonnet-5` wrote a short
+**Contextual enrichment was rejected.** Claude wrote a short
 retrieval context for each of the 675 sections (median 49 words), naming the
 publication, the section, and the rule it covers. Each chunk's embedding and
 rerank input got its section's context in front of the text. Strict hits are
@@ -108,11 +108,11 @@ text runs at about 2.1, and the estimator now uses the measured rate. One
 variant is untested: embedding with the context but reranking on the bare text.
 
 **Answer accuracy follows retrieval.** Generation was measured once on the
-baseline and once on the adopted pipeline, with `claude-opus-5` on all 60
+baseline and once on the adopted pipeline, with Claude on all 60
 questions: 86.7% → 98.3%, with a 100% citation rate in both runs. Every wrong
 answer but one was a retrieval miss where the model said the excerpts didn't
 contain the answer rather than guess. The exception is q043 in the baseline,
-covered under the corpus issue below. Each run cost $1.42 and $1.15.
+covered under the corpus issue below.
 
 Both figures were rescored from saved answers with no new model calls, after
 fixing one grading key. q053 is a yes/no question whose evidence is an AGI
@@ -121,13 +121,11 @@ repeating "$12,000". Questions can now carry `grade_keys` that override the
 evidence keys for grading only (`eval/rescore.py`). `results/runs.csv` keeps
 the numbers as recorded, 85.0% and 96.7%.
 
-Generation now defaults to `claude-sonnet-5`. Answers are short extractions
-from supplied excerpts, and Opus costs 2.5 times as much. Measured on all 60
-questions, Sonnet matches Opus at 98.3%, with q028 (the retrieval miss) the
-only wrong answer and a 100% citation rate, for $0.41 against $1.15. That run
-was recorded at 96.7% and rescored after a second paraphrase false negative:
-q050's correct "can't be your qualifying child" didn't match the key "isn't
-your qualifying child". A grading key can now list equivalent phrasings.
+A full generation run over the 60 questions costs about $0.41. A later run
+was recorded at 96.7% and rescored to 98.3% after a second paraphrase false
+negative: q050's correct "can't be your qualifying child" didn't match the key
+"isn't your qualifying child". A grading key can now list equivalent
+phrasings.
 
 **Latency** through Postgres, per query on the development GPU: dense
 retrieval 9 ms p50 / 10 ms p95, dense plus reranking 166 ms / 174 ms. The
@@ -149,7 +147,7 @@ flowchart LR
         dense --> rerank["bge-reranker-base<br/>keep 5"]
         rerank --> gate{"top score >= 0.1?"}
         gate -- no --> decline["Decline, no model call"]
-        gate -- yes --> llm["claude-sonnet-5<br/>cite excerpts or decline"]
+        gate -- yes --> llm["Claude<br/>cite excerpts or decline"]
     end
     pg --> dense
     decline -.-> log[("query_log")]
@@ -258,7 +256,7 @@ tokens, cost, per-stage latency, and retrieved chunk ids.
 The first real request through the running container, "How much of my 2025
 tips can I deduct?" as a `preparer`, returned the correct answer (up to
 $25,000, limited above $150,000 MAGI or $300,000 married filing jointly),
-citing Pub 17 and the Schedule 1-A instructions. It cost $0.0079 on Sonnet
+citing Pub 17 and the Schedule 1-A instructions. It cost $0.0079
 (3,127 tokens in, 162 out), took 210 ms to retrieve, 3,017 ms to rerank, and
 2,158 ms to generate, and was logged with all three timings and its five
 chunk ids.
@@ -324,7 +322,7 @@ python3 scripts/ingest.py
 export ANTHROPIC_API_KEY=sk-ant-...
 python3 scripts/ask.py "what is the standard deduction for a single filer?"
 python3 eval/run_eval.py --retrieval-only        # free
-python3 eval/run_eval.py                         # full run, ~$0.50 on Sonnet
+python3 eval/run_eval.py                         # full run, about $0.40
 python3 eval/rescore.py results/<run>.jsonl      # re-grade saved answers, free
 ```
 

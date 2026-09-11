@@ -1,4 +1,4 @@
-"""Do unanswerable questions get refused? Makes model calls, ~$0.01 each on Sonnet.
+"""Do unanswerable questions get refused? Makes model calls, ~$0.01 each.
 
 The reranker gate (config.MIN_RERANK_SCORE) only catches clearly off-topic
 questions, 3 of the 14 in eval/unanswerable.jsonl. This sends all 14 through

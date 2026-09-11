@@ -20,9 +20,8 @@ EMBED_DIM = 768
 # bge is trained asymmetrically: queries take this prefix, documents do not.
 QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
-# Sonnet: answers are short extractions from supplied excerpts, and section
-# contexts are 60-word summaries -- neither needs Opus, which costs 2.5x.
-# The first answer-accuracy runs used claude-opus-5; runs.csv records which.
+# The model for answers and section contexts. Answers are short extractions
+# from supplied excerpts; runs.csv records which model produced each run.
 GEN_MODEL = os.environ.get("PUB17_GEN_MODEL", "claude-sonnet-5")
 # These are short factual extractions over supplied context, not open reasoning,
 # so the low effort level is enough and keeps a 60-question eval run cheap.
