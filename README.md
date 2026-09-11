@@ -4,11 +4,11 @@ Retrieval-augmented question answering over ~2,000 pages of IRS tax year 2025
 publications, built to measure what each retrieval technique is actually worth
 rather than to assemble a stack.
 
-**Status:** Weekend 1 and the evaluation set are done. Three of the four
-Weekend 2 changes are measured: section-aware chunking and cross-encoder
-reranking were adopted, and Postgres full-text hybrid search was rejected.
-Retrieval and generation run end to end against pgvector in Docker, and
-answer accuracy is measured. Contextual enrichment is next.
+**Status:** Weekend 1 and the evaluation set are done. All four Weekend 2
+changes are measured. Section-aware chunking and cross-encoder reranking were
+adopted; Postgres full-text hybrid search and contextual enrichment were
+rejected. Retrieval and generation run end to end against pgvector in Docker,
+and answer accuracy is measured.
 
 ## Results
 
@@ -22,6 +22,8 @@ answer accuracy is measured. Contextual enrichment is next.
 | *ablation:* naive chunks + reranking | 90.0% | 93.3% | 96.7% | 0.924 | 98.3% | — |
 | *rejected:* section + hybrid full-text (RRF), no rerank | 46.7% | 73.3% | 81.7% | 0.605 | 90.0% | — |
 | *rejected:* section + hybrid full-text (RRF) + rerank | 90.0% | 98.3% | 98.3% | 0.939 | 98.3% | — |
+| *rejected:* section + generated section context, no rerank | 60.0% | 90.0% | 95.0% | 0.745 | 96.7% | — |
+| *rejected:* section + generated section context + rerank | 90.0% | 95.0% | 95.0% | 0.922 | 96.7% | — |
 
 n=60 questions, `bge-base-en-v1.5` retrieval, `bge-reranker-base` reranking,
 top-k=5, 350-word chunk ceiling. Measured
@@ -84,6 +86,23 @@ dense pool did, and recall@20 was 98.3% for both. It didn't reach q028 either,
 whose answer chunk isn't in the lexical top 50. It cost 15 ms more at p50 and
 51 ms more at p95, so it is off by default (`PUB17_HYBRID=1`). The fusion depth
 was fixed at 50 and not swept.
+
+**Contextual enrichment was rejected.** `claude-sonnet-5` wrote a short
+retrieval context for each of the 675 sections (median 49 words), naming the
+publication, the section, and the rule it covers. Each chunk's embedding and
+rerank input got its section's context in front of the text. Strict hits are
+still judged on the chunk's own text, so a context that happens to mention an
+answer figure can't score as retrieving it. Without the reranker, enrichment
+gained two questions at recall@5 (91.7% → 95.0%) and lost two at recall@1
+(63.3% → 60.0%). With the reranker it lost two at recall@5 (98.3% → 95.0%)
+and gained nothing. pgvector matched exhaustive search exactly on both. It
+didn't reach q028. Every difference is two questions, within noise, and
+nothing improved on the adopted pipeline, so it's off by default. The 675
+contexts are committed in `data/section_summaries.jsonl`, so
+`PUB17_CHUNKER=section-context` reproduces the rows with no API spend. They
+cost $2.44, against a $1.66 estimate that assumed 1.35 tokens per word. Tax
+text runs at about 2.1, and the estimator now uses the measured rate. One
+variant is untested: embedding with the context but reranking on the bare text.
 
 **Answer accuracy follows retrieval.** Generation was measured once on the
 baseline and once on the adopted pipeline, with `claude-opus-5` on all 60
@@ -211,6 +230,8 @@ pub17/store.py             pgvector schema; retrieve() = dense (or hybrid) + rer
 pub17/generate.py          cited answer generation
 scripts/ingest.py          parse -> chunk -> embed -> idempotent upsert
 scripts/ask.py             ask a question, get a cited answer
+scripts/summarize_sections.py  one generated context per section, cached
+data/section_summaries.jsonl   the 675 contexts, so enrichment reruns for free
 eval/questions.jsonl       60 verified questions
 eval/verify_questions.py   grounding check, exits nonzero on failure
 eval/run_eval.py           scores the pgvector pipeline, appends to runs.csv
@@ -246,8 +267,8 @@ is the point of measuring before changing anything.
   on. There is no held-out split, so small wins are indistinguishable from
   fitting the eval.
 - An abbreviation mismatch like "ACTC" against "additional child tax credit"
-  (q028) is out of reach of both dense and full-text retrieval. Query
-  expansion or contextual enrichment is the next thing to test against it.
+  (q028) is out of reach of dense, full-text, and context-enriched retrieval
+  alike. Query expansion is the idea left to test against it.
 - The HNSW graph is rebuilt randomly on every ingest, so with a 20-candidate
   pool a rebuild can move a question (q013 once). Runs aren't pinned to one
   index build.

@@ -14,3 +14,7 @@ run_at,config,chunker,n,embed_model,gen_model,top_k,words_per_chunk,overlap,chun
 2026-09-11T18:35:10Z,section-dense-hybrid-rerank,section,60,BAAI/bge-base-en-v1.5,,5,350,50,1508,90.0,98.3,98.3,0.939,98.3,,,181,225,,,
 2026-09-11T18:41:24Z,section-dense-rerank,section,60,BAAI/bge-base-en-v1.5,claude-opus-5,5,350,50,1508,90.0,98.3,98.3,0.939,98.3,96.7,100.0,415,490,3158,4469,1.1543
 2026-09-11T18:46:35Z,baseline-naive-dense,naive,60,BAAI/bge-base-en-v1.5,claude-opus-5,5,350,50,1130,51.7,78.3,83.3,0.642,86.7,85.0,100.0,82,128,3282,4731,1.423
+2026-09-11T18:57:38Z,section-context-dense-numpy,section-context,60,BAAI/bge-base-en-v1.5,,5,350,50,1508,60.0,90.0,95.0,0.745,96.7,,,,,,,
+2026-09-11T18:57:50Z,section-context-dense-rerank-numpy,section-context,60,BAAI/bge-base-en-v1.5,,5,350,50,1508,90.0,95.0,95.0,0.922,96.7,,,,,,,
+2026-09-11T18:58:16Z,section-context-dense,section-context,60,BAAI/bge-base-en-v1.5,,5,350,50,1508,60.0,90.0,95.0,0.745,96.7,,,10,14,,,
+2026-09-11T18:58:16Z,section-context-dense-rerank,section-context,60,BAAI/bge-base-en-v1.5,,5,350,50,1508,90.0,95.0,95.0,0.922,96.7,,,168,174,,,

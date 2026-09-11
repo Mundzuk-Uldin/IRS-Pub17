@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from pub17 import config
-from pub17.chunking import chunk_pdf
+from pub17.chunking import chunk_pdf, embed_text
 from pub17.rerank import rerank
 from pub17.store import embedder
 from run_eval import RUNS_CSV, RUN_FIELDS, first_hit_rank, load_questions, loose_hit
@@ -40,7 +40,7 @@ def build_index(model):
         for i, chunk in enumerate(chunk_pdf(stem)):
             rows.append(dict(chunk, publication=label, source_file=f"{stem}.pdf", chunk_index=i))
     matrix = model.encode(
-        [r["text"] for r in rows], batch_size=128, normalize_embeddings=True,
+        [embed_text(r) for r in rows], batch_size=128, normalize_embeddings=True,
         convert_to_numpy=True, show_progress_bar=False,
     )
     return rows, matrix

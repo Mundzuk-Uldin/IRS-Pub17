@@ -35,6 +35,9 @@ ALTER TABLE chunks ADD COLUMN IF NOT EXISTS
     tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', text)) STORED;
 CREATE INDEX IF NOT EXISTS chunks_tsv_gin ON chunks USING gin (tsv);
 
+-- Generated section context, embedded ahead of the text but stored apart from it.
+ALTER TABLE chunks ADD COLUMN IF NOT EXISTS context TEXT NOT NULL DEFAULT '';
+
 CREATE TABLE IF NOT EXISTS query_log (
     id             BIGSERIAL PRIMARY KEY,
     asked_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -95,30 +98,18 @@ def search_dense(conn, question, k=None):
     k = k or config.TOP_K
     qvec = embed_query(question)
     rows = conn.execute(
-        """
-        SELECT id, publication, source_file, page_start, page_end, text,
-               1 - (embedding <=> %s) AS similarity
+        f"""
+        SELECT {_CHUNK_COLS}, 1 - (embedding <=> %s) AS similarity
         FROM chunks
         ORDER BY embedding <=> %s
         LIMIT %s
         """,
         (qvec, qvec, k),
     ).fetchall()
-    return [
-        {
-            "id": r[0],
-            "publication": r[1],
-            "source_file": r[2],
-            "page_start": r[3],
-            "page_end": r[4],
-            "text": r[5],
-            "similarity": float(r[6]),
-        }
-        for r in rows
-    ]
+    return _as_dicts(rows, "similarity")
 
 
-_CHUNK_COLS = "id, publication, source_file, page_start, page_end, text"
+_CHUNK_COLS = "id, publication, source_file, page_start, page_end, text, context"
 
 
 def _as_dicts(rows, score_name):
@@ -127,9 +118,9 @@ def _as_dicts(rows, score_name):
     return [
         {
             "id": r[0], "publication": r[1], "source_file": r[2],
-            "page_start": r[3], "page_end": r[4], "text": r[5],
+            "page_start": r[3], "page_end": r[4], "text": r[5], "context": r[6],
             "similarity": None,
-            score_name: float(r[6]),
+            score_name: float(r[7]),
         }
         for r in rows
     ]

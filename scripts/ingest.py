@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pub17 import config
-from pub17.chunking import chunk_pdf
+from pub17.chunking import chunk_pdf, embed_text
 from pub17.store import SCHEMA, connect, embedder
 
 
@@ -27,7 +27,7 @@ def ingest_one(conn, model, stem, label):
 
     # bge embeds documents bare; only queries get the instruction prefix.
     vecs = model.encode(
-        [c["text"] for c in chunks],
+        [embed_text(c) for c in chunks],
         batch_size=32,
         normalize_embeddings=True,
         show_progress_bar=False,
@@ -41,11 +41,12 @@ def ingest_one(conn, model, stem, label):
             """
             INSERT INTO chunks
                 (publication, source_file, page_start, page_end, section,
-                 chunk_index, text, embedding)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                 chunk_index, text, context, embedding)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             [
-                (label, source, c["page_start"], c["page_end"], c["section"], i, c["text"], vec)
+                (label, source, c["page_start"], c["page_end"], c["section"], i,
+                 c["text"], c["context"], vec)
                 for i, (c, vec) in enumerate(zip(chunks, vecs))
             ],
         )

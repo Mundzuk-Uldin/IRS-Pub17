@@ -10,6 +10,9 @@ section-heading  As `section`, with the heading path prepended to the text
                  that gets embedded -- e.g. "Pub 501 > Standard Deduction >
                  Standard Deduction Chart". Deterministic, so it is measured
                  separately from the LLM-written contextual enrichment.
+section-context  As `section`, with the generated context of the chunk's
+                 parent section (scripts/summarize_sections.py) attached.
+                 Weekend 2 change 2, contextual enrichment.
 
 The 1040 instructions bookmark every form line ("Line 1a", "Line 1b", ...), so
 a pure split-on-outline leaves heading-only fragments with nothing to answer
@@ -17,8 +20,14 @@ from. Sections shorter than MIN_SECTION_WORDS are folded into the section that
 follows them.
 
 Every strategy returns the same shape, so ingest and eval don't care which ran:
-    [{"text", "page_start", "page_end", "section"}, ...]
+    [{"text", "page_start", "page_end", "section", "context"}, ...]
+
+`context` is kept apart from `text` on purpose. It is prepended for embedding
+and reranking (see `embed_text`), but a strict eval hit and the generation
+prompt still see only the chunk's own text. Otherwise a context that happens
+to mention an answer figure would score as retrieving it.
 """
+import json
 import re
 
 import pymupdf as fitz
@@ -52,6 +61,7 @@ def chunk_naive(path):
             "page_start": window[0][1],
             "page_end": window[-1][1],
             "section": "",
+            "context": "",
         })
     return chunks
 
@@ -130,6 +140,7 @@ def _pack(path_label, blocks, limit):
                 "page_start": items[0][0],
                 "page_end": items[-1][0],
                 "section": path_label,
+                "context": "",
             })
 
     words = 0
@@ -151,7 +162,28 @@ def _pack(path_label, blocks, limit):
     return chunks
 
 
-def chunk_sections(path, label, with_heading):
+def embed_text(chunk):
+    """What gets embedded and reranked: the chunk, behind its section context if any."""
+    context = chunk.get("context") or ""
+    return f"{context}\n\n{chunk['text']}" if context else chunk["text"]
+
+
+def _section_contexts(stem):
+    """{heading_path: context} for one publication. Later lines win, so a re-run
+    that regenerates a section supersedes the older context."""
+    path = config.ROOT / "data" / "section_summaries.jsonl"
+    if not path.exists():
+        raise RuntimeError("no section contexts yet -- run scripts/summarize_sections.py")
+    contexts = {}
+    for line in path.read_text().splitlines():
+        if line.strip():
+            r = json.loads(line)
+            if r["stem"] == stem:
+                contexts[r["section"]] = r["context"]
+    return contexts
+
+
+def chunk_sections(path, label, with_heading, contexts=None):
     with fitz.open(path) as doc:
         sections = _sections(doc, label)
 
@@ -170,6 +202,16 @@ def chunk_sections(path, label, with_heading):
     if with_heading:
         for c in chunks:
             c["text"] = f"{c['section']}\n\n{c['text']}"
+
+    if contexts is not None:
+        missing = sorted({c["section"] for c in chunks if c["section"] not in contexts})
+        if missing:
+            raise RuntimeError(
+                f"{len(missing)} sections of {label} have no generated context "
+                "-- run scripts/summarize_sections.py to fill them in"
+            )
+        for c in chunks:
+            c["context"] = contexts[c["section"]]
     return chunks
 
 
@@ -182,4 +224,6 @@ def chunk_pdf(stem):
         return chunk_sections(path, label, with_heading=False)
     if config.CHUNKER == "section-heading":
         return chunk_sections(path, label, with_heading=True)
+    if config.CHUNKER == "section-context":
+        return chunk_sections(path, label, with_heading=False, contexts=_section_contexts(stem))
     raise ValueError(f"unknown PUB17_CHUNKER {config.CHUNKER!r}")
