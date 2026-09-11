@@ -1,8 +1,8 @@
 """pgvector-backed chunk store and dense retrieval.
 
-Weekend 1 is dense cosine search only. Weekend 2 adds tsvector, RRF, and a
-cross-encoder alongside `search_dense`; the signature it returns is meant to
-stay the same so the eval harness doesn't have to change.
+`retrieve` is the entry point callers use: dense cosine search, then
+cross-encoder reranking when config.RERANK is on. Every stage returns the same
+list of chunk dicts, so the eval harness doesn't change as stages are added.
 """
 import functools
 
@@ -101,6 +101,17 @@ def search_dense(conn, question, k=None):
         }
         for r in rows
     ]
+
+
+def retrieve(conn, question, k=None):
+    """Dense search, then cross-encoder reranking when config.RERANK is on."""
+    k = k or config.TOP_K
+    if not config.RERANK:
+        return search_dense(conn, question, k=k)
+    # Imported lazily so the dense-only path never loads the cross-encoder.
+    from .rerank import rerank
+    candidates = search_dense(conn, question, k=max(k, config.RERANK_CANDIDATES))
+    return rerank(question, candidates, k=k)
 
 
 def cite(chunk):

@@ -4,3 +4,5 @@ run_at,config,chunker,n,embed_model,gen_model,top_k,words_per_chunk,overlap,chun
 2026-09-11T12:02:42Z,section-dense-numpy,section,60,BAAI/bge-base-en-v1.5,,5,350,50,1508,63.3,86.7,91.7,0.753,95.0,,,,,,,
 2026-09-11T12:02:44Z,section-fold40-dense-numpy,section,60,BAAI/bge-base-en-v1.5,,5,350,50,1324,61.7,83.3,90.0,0.734,93.3,,,,,,,
 2026-09-11T12:04:06Z,section-heading-dense-numpy,section-heading,60,BAAI/bge-base-en-v1.5,,5,350,50,1508,55.0,85.0,93.3,0.696,96.7,,,,,,,
+2026-09-11T12:08:26Z,section-dense-rerank-numpy,section,60,BAAI/bge-base-en-v1.5,,5,350,50,1508,90.0,98.3,98.3,0.939,98.3,,,,,,,
+2026-09-11T12:08:57Z,baseline-naive-dense-rerank-numpy,naive,60,BAAI/bge-base-en-v1.5,,5,350,50,1130,90.0,93.3,96.7,0.924,98.3,,,,,,,

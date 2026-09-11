@@ -32,7 +32,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pub17 import config
-from pub17.store import connect, search_dense
+from pub17.store import connect, retrieve
 
 QUESTIONS = Path(__file__).resolve().parent / "questions.jsonl"
 RUNS_CSV = config.RESULTS_DIR / "runs.csv"
@@ -142,7 +142,7 @@ def main():
 
         for i, q in enumerate(questions, start=1):
             t0 = time.perf_counter()
-            chunks = search_dense(conn, q["question"], k=args.k)
+            chunks = retrieve(conn, q["question"], k=args.k)
             retrieve_ms.append((time.perf_counter() - t0) * 1000)
 
             rank = first_hit_rank(chunks, q)

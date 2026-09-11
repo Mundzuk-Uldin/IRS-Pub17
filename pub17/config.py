@@ -27,8 +27,15 @@ GEN_EFFORT = os.environ.get("PUB17_GEN_EFFORT", "low")
 
 TOP_K = int(os.environ.get("PUB17_TOP_K", "5"))
 
-# naive | section | section-heading -- see pub17/chunking.py.
-CHUNKER = os.environ.get("PUB17_CHUNKER", "naive")
+# Cross-encoder reranking: over-fetch RERANK_CANDIDATES dense results, rescore
+# each (question, chunk) pair jointly, keep TOP_K. See pub17/rerank.py.
+RERANK = os.environ.get("PUB17_RERANK", "1") == "1"
+RERANK_MODEL = os.environ.get("PUB17_RERANK_MODEL", "BAAI/bge-reranker-base")
+RERANK_CANDIDATES = int(os.environ.get("PUB17_RERANK_CANDIDATES", "20"))
+
+# naive | section | section-heading -- see pub17/chunking.py. Defaults are the
+# best measured pipeline; PUB17_CHUNKER=naive PUB17_RERANK=0 is the baseline.
+CHUNKER = os.environ.get("PUB17_CHUNKER", "section")
 
 # Upper bound on chunk size for every strategy. OVERLAP applies to naive only;
 # section chunks start at headings and don't need it.
@@ -43,7 +50,8 @@ MIN_SECTION_WORDS = int(os.environ.get("PUB17_MIN_SECTION_WORDS", "0"))
 # Named so the eval CSV records which pipeline produced a row.
 CONFIG_NAME = os.environ.get(
     "PUB17_CONFIG",
-    "baseline-naive-dense" if CHUNKER == "naive" else f"{CHUNKER}-dense",
+    ("baseline-naive-dense" if CHUNKER == "naive" else f"{CHUNKER}-dense")
+    + ("-rerank" if RERANK else ""),
 )
 
 PUBLICATIONS = {

@@ -4,21 +4,24 @@ Retrieval-augmented question answering over ~2,000 pages of IRS tax year 2025
 publications, built to measure what each retrieval technique is actually worth
 rather than to assemble a stack.
 
-**Status:** Weekend 1 and the evaluation set are done. Of the four Weekend 2
-changes, section-aware chunking is measured. Reranking is next. Contextual
-enrichment is waiting on an Anthropic API key, and Postgres full-text hybrid
-search is waiting on pgvector.
+**Status:** Weekend 1 and the evaluation set are done. Two of the four
+Weekend 2 changes are measured: section-aware chunking and cross-encoder
+reranking. Contextual enrichment is waiting on an Anthropic API key, and
+Postgres full-text hybrid search is waiting on pgvector.
 
 ## Results
 
 | Configuration | recall@1 | recall@3 | recall@5 | MRR@5 | loose recall@5 | answer acc. |
 |---|---|---|---|---|---|---|
 | Naive 350-word windows, dense only (baseline) | 51.7% | 78.3% | 83.3% | 0.642 | 86.7% | pending |
-| **Section-aware chunking** | **63.3%** | **86.7%** | **91.7%** | **0.753** | 95.0% | pending |
+| Section-aware chunking | 63.3% | 86.7% | 91.7% | 0.753 | 95.0% | pending |
+| **+ cross-encoder reranking**, 20 → 5 | **90.0%** | **98.3%** | **98.3%** | **0.939** | 98.3% | pending |
 | *rejected:* + heading path in the embedded text | 55.0% | 85.0% | 93.3% | 0.696 | 96.7% | — |
 | *rejected:* + fold sections under 40 words | 61.7% | 83.3% | 90.0% | 0.734 | 93.3% | — |
+| *ablation:* naive chunks + reranking | 90.0% | 93.3% | 96.7% | 0.924 | 98.3% | — |
 
-n=60 questions, `bge-base-en-v1.5`, top-k=5, 350-word chunk ceiling. Measured
+n=60 questions, `bge-base-en-v1.5` retrieval, `bge-reranker-base` reranking,
+top-k=5, 350-word chunk ceiling. Measured
 by `eval/baseline_numpy.py`; every run is appended to `results/runs.csv`.
 
 **One question is 1.7 points.** With n=60, only naive → section clears that
@@ -33,8 +36,30 @@ loss limit)
 and introduced 3 new ones (q012, q024, q029).
 
 Putting the heading path into the embedded text bought one question at
-recall@5 and cost five at recall@1. It was not adopted. The reranker reorders
-the top candidates anyway, so rank-1 precision is the better signal to keep.
+recall@5 and cost five at recall@1. It was not adopted.
+
+**Reranking did most of the work.** Over-fetching 20 dense candidates and
+rescoring them with a cross-encoder took recall@1 from 63.3% to 90.0% and
+recall@5 from 91.7% to 98.3%. That is the ceiling: dense recall@20 is also
+98.3%, so the reranker ordered the pool as well as the pool allowed. The
+ablation matters more than the headline, though. Naive chunks with reranking
+reach 90.0% at recall@1 and 96.7% at recall@5, so once the reranker is in
+place, section chunking is worth one question at recall@5, which is within
+noise. Most of what section chunking gained on its own, the reranker recovers
+anyway. Section chunking stays because it costs nothing at query time and
+never measured worse, but the claim it supports is small.
+
+**The one remaining miss is out of reach, not misranked.** q028 asks how much
+of the child tax credit is claimable as the additional child tax credit. Its
+answer chunk sits at dense rank 49, outside the 20-candidate pool, because it
+says "ACTC" where the question spells the name out. Widening the pool to 50
+would fix it, and it wasn't done: that would be tuning the pipeline to one
+question it is scored on. Lexical hybrid search is the change that should be
+tested against it.
+
+**Latency.** Per query on the development GPU: query embedding 6 ms p50,
+exhaustive dense search 8 ms, reranking 20 candidates 172 ms p50 / 180 ms p95.
+The reranker runs in unoptimized fp32 and dominates retrieval cost.
 
 ## Why the numbers are trustworthy
 
@@ -109,7 +134,8 @@ Retrieval scoring needs nothing else:
 
 ```bash
 python3 eval/verify_questions.py      # gate: is the eval set still grounded?
-python3 eval/baseline_numpy.py --csv  # score retrieval, no services required
+python3 eval/baseline_numpy.py --csv  # score the default pipeline, no services required
+PUB17_CHUNKER=naive PUB17_RERANK=0 python3 eval/baseline_numpy.py   # the Weekend 1 baseline
 ```
 
 For the full pipeline (pgvector storage, generation, latency and cost metrics):
@@ -132,7 +158,8 @@ targets a native Postgres rather than a container.
 ```
 pub17/config.py            settings, all env-overridable
 pub17/chunking.py          naive and section-aware chunkers (PUB17_CHUNKER)
-pub17/store.py             pgvector schema, dense retrieval
+pub17/rerank.py            cross-encoder reranking (PUB17_RERANK)
+pub17/store.py             pgvector schema, retrieve() = dense search + rerank
 pub17/generate.py          cited answer generation
 scripts/ingest.py          parse -> chunk -> embed -> idempotent upsert
 scripts/ask.py             ask a question, get a cited answer
@@ -169,7 +196,10 @@ is the point of measuring before changing anything.
 - n=60, and every configuration is chosen on the same 60 questions it is scored
   on. There is no held-out split, so small wins are indistinguishable from
   fitting the eval.
-- Retrieval is dense-only, so exact-phrase questions have no lexical fallback.
+- No lexical retrieval yet, so an abbreviation mismatch like "ACTC" against
+  "additional child tax credit" (q028) never reaches the reranker.
+- Reranking is measured only through the numpy path. The pgvector path uses the
+  same `rerank()`, but it hasn't run end to end.
 - Answer accuracy is unmeasured pending the generation run.
 - Exact-key grading cannot tell a correct answer from one that states the right
   number for the wrong reason.

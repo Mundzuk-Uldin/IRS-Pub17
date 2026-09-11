@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT))
 
 from pub17 import config
 from pub17.chunking import chunk_pdf
+from pub17.rerank import rerank
 from pub17.store import embedder
 from run_eval import RUNS_CSV, RUN_FIELDS, first_hit_rank, load_questions, loose_hit
 
@@ -52,7 +53,7 @@ def main():
     args = ap.parse_args()
 
     model = embedder()
-    print(f"chunker={config.CHUNKER}, embedding corpus on {model.device} ...")
+    print(f"chunker={config.CHUNKER}, rerank={config.RERANK}, embedding corpus on {model.device} ...")
     rows, matrix = build_index(model)
     print(f"  {len(rows):,} chunks")
 
@@ -67,8 +68,11 @@ def main():
     by_topic, hit_topic = Counter(), Counter()
     misses = []
     for qi, q in enumerate(questions):
-        top = np.argsort(-sims[qi])[:args.k]
+        pool = max(args.k, config.RERANK_CANDIDATES) if config.RERANK else args.k
+        top = np.argsort(-sims[qi])[:pool]
         chunks = [dict(rows[j], similarity=float(sims[qi][j])) for j in top]
+        if config.RERANK:
+            chunks = rerank(q["question"], chunks, k=args.k)
         rank = first_hit_rank(chunks, q)
         ranks.append(rank)
         loose_ranks.append(first_hit_rank(chunks, q, hit=loose_hit))

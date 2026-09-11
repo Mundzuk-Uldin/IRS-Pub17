@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pub17 import config
 from pub17.generate import answer
-from pub17.store import cite, connect, search_dense
+from pub17.store import cite, connect, retrieve
 
 
 def main():
@@ -27,7 +27,7 @@ def main():
 
     t0 = time.perf_counter()
     with connect() as conn:
-        chunks = search_dense(conn, question, k=args.k)
+        chunks = retrieve(conn, question, k=args.k)
     retrieve_ms = int((time.perf_counter() - t0) * 1000)
 
     print(f"\nQ: {question}")
