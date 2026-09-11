@@ -2,7 +2,7 @@
 
 [![retrieval-eval](https://github.com/Mundzuk-Uldin/IRS-Pub17/actions/workflows/retrieval-eval.yml/badge.svg)](https://github.com/Mundzuk-Uldin/IRS-Pub17/actions/workflows/retrieval-eval.yml)
 
-Retrieval-augmented question answering over ~2,000 pages of IRS tax year 2025
+Retrieval-augmented question answering over 333 pages (338,000 words) of IRS tax year 2025
 publications, built to measure what each retrieval technique is actually worth
 rather than to assemble a stack.
 

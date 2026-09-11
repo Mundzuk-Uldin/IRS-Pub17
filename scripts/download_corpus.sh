@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fetch the tax year 2025 corpus (~2,000 pages) into data/raw/.
+# Fetch the tax year 2025 corpus (333 pages) into data/raw/.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p data/raw
