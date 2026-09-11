@@ -1,5 +1,7 @@
 # pub17
 
+[![retrieval-eval](https://github.com/Mundzuk-Uldin/IRS-Pub17/actions/workflows/retrieval-eval.yml/badge.svg)](https://github.com/Mundzuk-Uldin/IRS-Pub17/actions/workflows/retrieval-eval.yml)
+
 Retrieval-augmented question answering over ~2,000 pages of IRS tax year 2025
 publications, built to measure what each retrieval technique is actually worth
 rather than to assemble a stack.
@@ -225,13 +227,32 @@ both models built in. `tests/test_api.py` covers auth, role scoping, both
 refusal gates, the upstream-error path, and the log. It runs against the real
 database and models with generation faked, so it costs nothing.
 
-**CI** (`.github/workflows/retrieval-eval.yml`) is retrieval-only. It runs on
-demand and on pull requests that touch the pipeline or the eval, never on
-every push, and needs no API key or database. It fails if the downloaded
-corpus doesn't match `data/raw/SHA256SUMS`: the IRS republishes PDFs under the
-same URLs, and every page number in the eval refers to these exact files. It
-also fails if strict recall@5 drops below 96.7%, one question under the
-adopted 98.3%. It hasn't run on GitHub yet, because the repo has no remote.
+**CI** (`.github/workflows/retrieval-eval.yml`) runs on demand and on pull
+requests that touch the pipeline, the eval, or the service, never on every
+push, and needs no API key and spends nothing. Both of its jobs first check
+the downloaded corpus against `data/raw/SHA256SUMS`: the IRS republishes PDFs
+under the same URLs, and every page number in the eval refers to these exact
+files.
+
+- `retrieval` verifies the eval set against the corpus, then runs the
+  retrieval-only eval and fails if strict recall@5 drops below 96.7%, one
+  question under the adopted 98.3%.
+- `tests` starts a pgvector service container, ingests the section chunks,
+  and runs the service tests with generation faked.
+
+On its first run on GitHub's CPU runners, `retrieval` reproduced the GPU
+numbers exactly: 90.0% at recall@1, 98.3% at recall@5, MRR 0.939, the same
+single miss (q028). `tests` passed 10 of 10. The jobs took 24 and 13 minutes,
+mostly embedding the corpus on CPU.
+
+**CD** (`.github/workflows/release-image.yml`) builds the API image and
+publishes it to GitHub Container Registry on a `v*` tag or by hand, tagged
+with the version, the short commit sha, and `latest`. The first run took three
+minutes, and the image is public:
+
+```bash
+docker pull ghcr.io/mundzuk-uldin/irs-pub17:latest
+```
 
 ## Setup
 
@@ -298,7 +319,7 @@ eval/rescore.py            re-grades saved answers after a grader change, free
 eval/calibrate_refusal.py  picks the refusal threshold; negatives in unanswerable.jsonl
 tests/test_api.py          service tests, generation faked
 Dockerfile                 the API image, CPU inference, models built in
-.github/workflows/         retrieval-only eval, on demand and on pull requests
+.github/workflows/         CI (retrieval eval + service tests), CD (image to ghcr.io)
 data/raw/SHA256SUMS        the exact PDFs the eval was built on
 eval/baseline_numpy.py     scores retrieval with no services
 results/runs.csv           every configuration measured under the strict hit rule
@@ -329,7 +350,8 @@ is the point of measuring before changing anything.
 - One embedding model and one chunk size; neither has been swept.
 - The refusal gate catches 3 of 14 unanswerable questions. The model's own
   refusals on the other 11 are unmeasured.
-- The CI workflow hasn't run on GitHub; the repository has no remote yet.
+- CI takes about 24 minutes on GitHub's CPU runners, most of it embedding the
+  corpus, once in each job. Only the models are cached between runs.
 - n=60, and every configuration is chosen on the same 60 questions it is scored
   on. There is no held-out split, so small wins are indistinguishable from
   fitting the eval.
