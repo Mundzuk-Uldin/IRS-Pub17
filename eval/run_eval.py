@@ -158,7 +158,7 @@ def main():
                 "first_hit_rank": rank,
                 "retrieved": [
                     {"cite": f"{c['source_file']} p{c['page_start']}-{c['page_end']}",
-                     "similarity": round(c["similarity"], 4),
+                     "similarity": None if c["similarity"] is None else round(c["similarity"], 4),
                      "hit": is_hit(c, q)}
                     for c in chunks
                 ],

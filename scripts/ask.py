@@ -39,7 +39,8 @@ def main():
 
     print(f"\nRetrieved {len(chunks)} chunks in {retrieve_ms} ms:")
     for i, c in enumerate(chunks, start=1):
-        print(f"  [{i}] sim={c['similarity']:.3f}  {cite(c)}")
+        sim = "  lex" if c["similarity"] is None else f"{c['similarity']:.3f}"
+        print(f"  [{i}] sim={sim}  {cite(c)}")
         if args.show_chunks:
             print(f"      {' '.join(c['text'].split())[:400]}...")
 

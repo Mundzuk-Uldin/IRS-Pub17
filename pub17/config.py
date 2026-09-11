@@ -33,6 +33,12 @@ RERANK = os.environ.get("PUB17_RERANK", "1") == "1"
 RERANK_MODEL = os.environ.get("PUB17_RERANK_MODEL", "BAAI/bge-reranker-base")
 RERANK_CANDIDATES = int(os.environ.get("PUB17_RERANK_CANDIDATES", "20"))
 
+# Hybrid retrieval: fuse dense results with Postgres full-text results by
+# Reciprocal Rank Fusion. Each side contributes HYBRID_DEPTH ranked results.
+HYBRID = os.environ.get("PUB17_HYBRID", "0") == "1"
+HYBRID_DEPTH = int(os.environ.get("PUB17_HYBRID_DEPTH", "50"))
+RRF_K = 60
+
 # naive | section | section-heading -- see pub17/chunking.py. Defaults are the
 # best measured pipeline; PUB17_CHUNKER=naive PUB17_RERANK=0 is the baseline.
 CHUNKER = os.environ.get("PUB17_CHUNKER", "section")
@@ -51,6 +57,7 @@ MIN_SECTION_WORDS = int(os.environ.get("PUB17_MIN_SECTION_WORDS", "0"))
 CONFIG_NAME = os.environ.get(
     "PUB17_CONFIG",
     ("baseline-naive-dense" if CHUNKER == "naive" else f"{CHUNKER}-dense")
+    + ("-hybrid" if HYBRID else "")
     + ("-rerank" if RERANK else ""),
 )
 

@@ -4,10 +4,11 @@ Retrieval-augmented question answering over ~2,000 pages of IRS tax year 2025
 publications, built to measure what each retrieval technique is actually worth
 rather than to assemble a stack.
 
-**Status:** Weekend 1 and the evaluation set are done. Two of the four
+**Status:** Weekend 1 and the evaluation set are done. Three of the four
 Weekend 2 changes are measured: section-aware chunking and cross-encoder
-reranking. The pipeline runs end to end against pgvector in Docker.
-Contextual enrichment and Postgres full-text hybrid search are next.
+reranking were adopted, and Postgres full-text hybrid search was rejected.
+Retrieval runs end to end against pgvector in Docker. Contextual enrichment
+and the answer-accuracy column are waiting on API credits.
 
 ## Results
 
@@ -19,6 +20,8 @@ Contextual enrichment and Postgres full-text hybrid search are next.
 | *rejected:* + heading path in the embedded text | 55.0% | 85.0% | 93.3% | 0.696 | 96.7% | — |
 | *rejected:* + fold sections under 40 words | 61.7% | 83.3% | 90.0% | 0.734 | 93.3% | — |
 | *ablation:* naive chunks + reranking | 90.0% | 93.3% | 96.7% | 0.924 | 98.3% | — |
+| *rejected:* section + hybrid full-text (RRF), no rerank | 46.7% | 73.3% | 81.7% | 0.605 | 90.0% | — |
+| *rejected:* section + hybrid full-text (RRF) + rerank | 90.0% | 98.3% | 98.3% | 0.939 | 98.3% | — |
 
 n=60 questions, `bge-base-en-v1.5` retrieval, `bge-reranker-base` reranking,
 top-k=5, 350-word chunk ceiling. Measured
@@ -68,6 +71,19 @@ the exhaustive one. pgvector builds its HNSW graph randomly at each ingest, and
 the next build matched exhaustive search exactly, at both `ef_search` 40 and
 200. So an approximate index can move a question when you over-fetch 20
 candidates, and it is a one-question effect here.
+
+**Hybrid full-text search was rejected.** Dense results were fused with
+Postgres `tsvector` results by Reciprocal Rank Fusion (k=60, 50 results from
+each side). Postgres's default query parser ANDs every word, and it matched 0
+chunks for a full-sentence question, so the terms are OR-ed and `ts_rank_cd`
+ranks the matches. Without the reranker, hybrid made retrieval worse (63.3% →
+46.7% at recall@1). Tax prose repeats "credit" and "tax" on nearly every page,
+so OR-ed term frequency pulls noise into the top five. With the reranker it
+changed nothing: the fused 20-candidate pool held exactly the answers the
+dense pool did, and recall@20 was 98.3% for both. It didn't reach q028 either,
+whose answer chunk isn't in the lexical top 50. It cost 15 ms more at p50 and
+51 ms more at p95, so it is off by default (`PUB17_HYBRID=1`). The fusion depth
+was fixed at 50 and not swept.
 
 **Latency** through Postgres, per query on the development GPU: dense
 retrieval 9 ms p50 / 10 ms p95, dense plus reranking 166 ms / 174 ms. The
@@ -171,7 +187,7 @@ docker-compose.yml         Postgres 18 + pgvector on localhost:5434
 pub17/config.py            settings, all env-overridable
 pub17/chunking.py          naive and section-aware chunkers (PUB17_CHUNKER)
 pub17/rerank.py            cross-encoder reranking (PUB17_RERANK)
-pub17/store.py             pgvector schema, retrieve() = dense search + rerank
+pub17/store.py             pgvector schema; retrieve() = dense (or hybrid) + rerank
 pub17/generate.py          cited answer generation
 scripts/ingest.py          parse -> chunk -> embed -> idempotent upsert
 scripts/ask.py             ask a question, get a cited answer
@@ -208,8 +224,9 @@ is the point of measuring before changing anything.
 - n=60, and every configuration is chosen on the same 60 questions it is scored
   on. There is no held-out split, so small wins are indistinguishable from
   fitting the eval.
-- No lexical retrieval yet, so an abbreviation mismatch like "ACTC" against
-  "additional child tax credit" (q028) never reaches the reranker.
+- An abbreviation mismatch like "ACTC" against "additional child tax credit"
+  (q028) is out of reach of both dense and full-text retrieval. Query
+  expansion or contextual enrichment is the next thing to test against it.
 - The HNSW graph is rebuilt randomly on every ingest, so with a 20-candidate
   pool a rebuild can move a question (q013 once). Runs aren't pinned to one
   index build.

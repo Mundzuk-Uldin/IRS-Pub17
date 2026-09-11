@@ -1,7 +1,8 @@
 """pgvector-backed chunk store and dense retrieval.
 
-`retrieve` is the entry point callers use: dense cosine search, then
-cross-encoder reranking when config.RERANK is on. Every stage returns the same
+`retrieve` is the entry point callers use: dense cosine search, fused with
+Postgres full-text search when config.HYBRID is on, then cross-encoder
+reranking when config.RERANK is on. Every stage returns the same
 list of chunk dicts, so the eval harness doesn't change as stages are added.
 """
 import functools
@@ -27,6 +28,12 @@ CREATE TABLE IF NOT EXISTS chunks (
     embedding    vector({config.EMBED_DIM}),
     UNIQUE (source_file, chunk_index)
 );
+
+-- Full-text side of hybrid retrieval. Generated, so existing rows are backfilled
+-- when the column is added and every insert keeps it current.
+ALTER TABLE chunks ADD COLUMN IF NOT EXISTS
+    tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', text)) STORED;
+CREATE INDEX IF NOT EXISTS chunks_tsv_gin ON chunks USING gin (tsv);
 
 CREATE TABLE IF NOT EXISTS query_log (
     id             BIGSERIAL PRIMARY KEY,
@@ -111,14 +118,71 @@ def search_dense(conn, question, k=None):
     ]
 
 
+_CHUNK_COLS = "id, publication, source_file, page_start, page_end, text"
+
+
+def _as_dicts(rows, score_name):
+    # Every chunk carries a `similarity` key; it is None for a chunk only the
+    # full-text side found, since there is no cosine score to report for it.
+    return [
+        {
+            "id": r[0], "publication": r[1], "source_file": r[2],
+            "page_start": r[3], "page_end": r[4], "text": r[5],
+            "similarity": None,
+            score_name: float(r[6]),
+        }
+        for r in rows
+    ]
+
+
+def search_lexical(conn, question, k):
+    """Top-k chunks by Postgres full-text rank.
+
+    plainto_tsquery ANDs every word, and a full-sentence question almost never
+    has all its words in one chunk, so the terms are OR-ed instead and ts_rank_cd
+    does the ranking. Stop words are already gone by then.
+    """
+    rows = conn.execute(
+        f"""
+        WITH q AS (
+            SELECT replace(plainto_tsquery('english', %s)::text, '&', '|')::tsquery AS q
+        )
+        SELECT {_CHUNK_COLS}, ts_rank_cd(tsv, q.q) AS rank
+        FROM chunks, q
+        WHERE tsv @@ q.q
+        ORDER BY rank DESC
+        LIMIT %s
+        """,
+        (question, k),
+    ).fetchall()
+    return _as_dicts(rows, "lexical_rank")
+
+
+def search_hybrid(conn, question, k):
+    """Reciprocal Rank Fusion of dense and full-text results.
+
+    RRF scores by rank position alone, 1 / (RRF_K + rank), so cosine similarity
+    and ts_rank never have to be put on one scale.
+    """
+    depth = config.HYBRID_DEPTH
+    fused = {}
+    for results in (search_dense(conn, question, k=depth), search_lexical(conn, question, depth)):
+        for rank, chunk in enumerate(results, start=1):
+            entry = fused.setdefault(chunk["id"], {**chunk, "rrf": 0.0})
+            entry["rrf"] += 1.0 / (config.RRF_K + rank)
+    return sorted(fused.values(), key=lambda c: -c["rrf"])[:k]
+
+
 def retrieve(conn, question, k=None):
-    """Dense search, then cross-encoder reranking when config.RERANK is on."""
+    """Dense or hybrid candidates, then cross-encoder reranking when on."""
     k = k or config.TOP_K
+    pool = max(k, config.RERANK_CANDIDATES) if config.RERANK else k
+    search = search_hybrid if config.HYBRID else search_dense
+    candidates = search(conn, question, k=pool)
     if not config.RERANK:
-        return search_dense(conn, question, k=k)
+        return candidates
     # Imported lazily so the dense-only path never loads the cross-encoder.
     from .rerank import rerank
-    candidates = search_dense(conn, question, k=max(k, config.RERANK_CANDIDATES))
     return rerank(question, candidates, k=k)
 
 

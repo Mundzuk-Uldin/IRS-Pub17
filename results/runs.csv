@@ -10,3 +10,5 @@ run_at,config,chunker,n,embed_model,gen_model,top_k,words_per_chunk,overlap,chun
 2026-09-11T18:23:47Z,section-dense,section,60,BAAI/bge-base-en-v1.5,,5,350,50,1508,63.3,86.7,91.7,0.753,95.0,,,9,10,,,
 2026-09-11T18:24:41Z,baseline-naive-dense,naive,60,BAAI/bge-base-en-v1.5,,5,350,50,1130,51.7,78.3,83.3,0.642,86.7,,,9,12,,,
 2026-09-11T18:24:41Z,baseline-naive-dense-rerank,naive,60,BAAI/bge-base-en-v1.5,,5,350,50,1130,88.3,93.3,96.7,0.913,98.3,,,164,172,,,
+2026-09-11T18:35:10Z,section-dense-hybrid,section,60,BAAI/bge-base-en-v1.5,,5,350,50,1508,46.7,73.3,81.7,0.605,90.0,,,29,75,,,
+2026-09-11T18:35:10Z,section-dense-hybrid-rerank,section,60,BAAI/bge-base-en-v1.5,,5,350,50,1508,90.0,98.3,98.3,0.939,98.3,,,181,225,,,
