@@ -20,7 +20,10 @@ EMBED_DIM = 768
 # bge is trained asymmetrically: queries take this prefix, documents do not.
 QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
-GEN_MODEL = os.environ.get("PUB17_GEN_MODEL", "claude-opus-5")
+# Sonnet: answers are short extractions from supplied excerpts, and section
+# contexts are 60-word summaries -- neither needs Opus, which costs 2.5x.
+# The first answer-accuracy runs used claude-opus-5; runs.csv records which.
+GEN_MODEL = os.environ.get("PUB17_GEN_MODEL", "claude-sonnet-5")
 # These are short factual extractions over supplied context, not open reasoning,
 # so the low effort level is enough and keeps a 60-question eval run cheap.
 GEN_EFFORT = os.environ.get("PUB17_GEN_EFFORT", "low")
@@ -39,7 +42,7 @@ HYBRID = os.environ.get("PUB17_HYBRID", "0") == "1"
 HYBRID_DEPTH = int(os.environ.get("PUB17_HYBRID_DEPTH", "50"))
 RRF_K = 60
 
-# naive | section | section-heading -- see pub17/chunking.py. Defaults are the
+# naive | section | section-heading | section-context -- see pub17/chunking.py. Defaults are the
 # best measured pipeline; PUB17_CHUNKER=naive PUB17_RERANK=0 is the baseline.
 CHUNKER = os.environ.get("PUB17_CHUNKER", "section")
 

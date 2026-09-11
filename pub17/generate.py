@@ -13,9 +13,15 @@ import anthropic
 from . import config
 from .store import cite
 
-# claude-opus-5 list pricing, USD per million tokens.
-PRICE_IN = 5.00
-PRICE_OUT = 25.00
+# List pricing, USD per million tokens (input, output).
+PRICES = {
+    "claude-opus-5": (5.00, 25.00),
+    "claude-sonnet-5": (2.00, 10.00),
+}
+
+# The server-side refusal fallback is documented for the Opus and Fable tier.
+# Other models go through the plain endpoint.
+FALLBACK_MODELS = {"claude-opus-5", "claude-fable-5-1"}
 
 SYSTEM = f"""You answer questions about U.S. federal income tax for tax year {config.TAX_YEAR}, using only the excerpts supplied to you.
 
@@ -35,8 +41,18 @@ def build_prompt(question, chunks):
     return f"Excerpts:\n\n{excerpts}\n\nQuestion: {question}"
 
 
-def cost_usd(usage):
-    return (usage.input_tokens * PRICE_IN + usage.output_tokens * PRICE_OUT) / 1_000_000
+def cost_usd(usage, model=None):
+    price_in, price_out = PRICES[model or config.GEN_MODEL]
+    return (usage.input_tokens * price_in + usage.output_tokens * price_out) / 1_000_000
+
+
+def create_message(client, **kwargs):
+    """messages.create, with the refusal fallback on models that support it."""
+    if kwargs["model"] in FALLBACK_MODELS:
+        return client.beta.messages.create(
+            betas=["server-side-fallback-2026-07-01"], fallbacks="default", **kwargs
+        )
+    return client.messages.create(**kwargs)
 
 
 def answer(question, chunks, client=None):
@@ -44,14 +60,12 @@ def answer(question, chunks, client=None):
     client = client or anthropic.Anthropic()
 
     t0 = time.perf_counter()
-    response = client.beta.messages.create(
+    response = create_message(
+        client,
         model=config.GEN_MODEL,
         max_tokens=1024,
         system=SYSTEM,
         output_config={"effort": config.GEN_EFFORT},
-        # Route around a safety refusal rather than returning an empty answer.
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
         messages=[{"role": "user", "content": build_prompt(question, chunks)}],
     )
     elapsed_ms = int((time.perf_counter() - t0) * 1000)

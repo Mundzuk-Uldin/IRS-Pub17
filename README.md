@@ -7,16 +7,16 @@ rather than to assemble a stack.
 **Status:** Weekend 1 and the evaluation set are done. Three of the four
 Weekend 2 changes are measured: section-aware chunking and cross-encoder
 reranking were adopted, and Postgres full-text hybrid search was rejected.
-Retrieval runs end to end against pgvector in Docker. Contextual enrichment
-and the answer-accuracy column are waiting on API credits.
+Retrieval and generation run end to end against pgvector in Docker, and
+answer accuracy is measured. Contextual enrichment is next.
 
 ## Results
 
 | Configuration | recall@1 | recall@3 | recall@5 | MRR@5 | loose recall@5 | answer acc. |
 |---|---|---|---|---|---|---|
-| Naive 350-word windows, dense only (baseline) | 51.7% | 78.3% | 83.3% | 0.642 | 86.7% | pending |
-| Section-aware chunking | 63.3% | 86.7% | 91.7% | 0.753 | 95.0% | pending |
-| **+ cross-encoder reranking**, 20 → 5 | **90.0%** | **98.3%** | **98.3%** | **0.939** | 98.3% | pending |
+| Naive 350-word windows, dense only (baseline) | 51.7% | 78.3% | 83.3% | 0.642 | 86.7% | 86.7% |
+| Section-aware chunking | 63.3% | 86.7% | 91.7% | 0.753 | 95.0% | — |
+| **+ cross-encoder reranking**, 20 → 5 | **90.0%** | **98.3%** | **98.3%** | **0.939** | 98.3% | **98.3%** |
 | *rejected:* + heading path in the embedded text | 55.0% | 85.0% | 93.3% | 0.696 | 96.7% | — |
 | *rejected:* + fold sections under 40 words | 61.7% | 83.3% | 90.0% | 0.734 | 93.3% | — |
 | *ablation:* naive chunks + reranking | 90.0% | 93.3% | 96.7% | 0.924 | 98.3% | — |
@@ -84,6 +84,25 @@ dense pool did, and recall@20 was 98.3% for both. It didn't reach q028 either,
 whose answer chunk isn't in the lexical top 50. It cost 15 ms more at p50 and
 51 ms more at p95, so it is off by default (`PUB17_HYBRID=1`). The fusion depth
 was fixed at 50 and not swept.
+
+**Answer accuracy follows retrieval.** Generation was measured once on the
+baseline and once on the adopted pipeline, with `claude-opus-5` on all 60
+questions: 86.7% → 98.3%, with a 100% citation rate in both runs. Every wrong
+answer but one was a retrieval miss where the model said the excerpts didn't
+contain the answer rather than guess. The exception is q043 in the baseline,
+covered under the corpus issue below. Each run cost $1.42 and $1.15.
+
+Both figures were rescored from saved answers with no new model calls, after
+fixing one grading key. q053 is a yes/no question whose evidence is an AGI
+figure, and a correct "Yes, you can claim the child" was failing for not
+repeating "$12,000". Questions can now carry `grade_keys` that override the
+evidence keys for grading only (`eval/rescore.py`). `results/runs.csv` keeps
+the numbers as recorded, 85.0% and 96.7%.
+
+Generation now defaults to `claude-sonnet-5`. Answers are short extractions
+from supplied excerpts, Opus costs 2.5 times as much, and a spot check gave
+the same answer for $0.0082 instead of $0.0225. Answer accuracy has not been
+re-measured on Sonnet.
 
 **Latency** through Postgres, per query on the development GPU: dense
 retrieval 9 ms p50 / 10 ms p95, dense plus reranking 166 ms / 174 ms. The
@@ -174,7 +193,8 @@ python3 scripts/ingest.py
 export ANTHROPIC_API_KEY=sk-ant-...
 python3 scripts/ask.py "what is the standard deduction for a single filer?"
 python3 eval/run_eval.py --retrieval-only        # free
-python3 eval/run_eval.py                         # full run, makes model calls
+python3 eval/run_eval.py                         # full run, ~$0.50 on Sonnet
+python3 eval/rescore.py results/<run>.jsonl      # re-grade saved answers, free
 ```
 
 To use a native Postgres instead, install pgvector, run
@@ -194,6 +214,7 @@ scripts/ask.py             ask a question, get a cited answer
 eval/questions.jsonl       60 verified questions
 eval/verify_questions.py   grounding check, exits nonzero on failure
 eval/run_eval.py           scores the pgvector pipeline, appends to runs.csv
+eval/rescore.py            re-grades saved answers after a grader change, free
 eval/baseline_numpy.py     scores retrieval with no services
 results/runs.csv           every configuration measured under the strict hit rule
 results/runs_v1_loose.csv  Weekend 1 rows under the retired page-overlap rule
@@ -230,7 +251,13 @@ is the point of measuring before changing anything.
 - The HNSW graph is rebuilt randomly on every ingest, so with a 20-candidate
   pool a rebuild can move a question (q013 once). Runs aren't pinned to one
   index build.
-- Answer accuracy is unmeasured pending the generation run.
+- Answer accuracy is measured once per configuration, on Opus, and not yet on
+  the Sonnet default.
+- The corpus contradicts itself on q043. Pub 17 gives the age 60–63 401(k)
+  limit as $37,750 (pp. 3 and 49), but its own $11,250 catch-up implies
+  $23,500 + $11,250 = $34,750. The eval grades faithfulness to the corpus, so
+  the question expects $37,750. The baseline's answer of $34,750 was consistent
+  with the excerpts it retrieved.
 - Exact-key grading cannot tell a correct answer from one that states the right
   number for the wrong reason.
 - `page_start`/`page_end` come from the words in a chunk, so a chunk spanning a

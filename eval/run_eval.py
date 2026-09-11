@@ -90,9 +90,16 @@ def answer_is_correct(text, question):
     A judge would be more forgiving of paraphrase, but it would also make the
     metric depend on a second model's mood. These answers are dollar amounts,
     rates, and yes/no -- exact-key matching is the right tool.
+
+    `answer_keys` are evidence: the verifier requires them on every gold page,
+    and a strict retrieval hit must contain them. Usually the answer repeats
+    the evidence, so they grade the answer too. When it needn't -- a yes/no
+    question whose evidence is a dollar figure -- `grade_keys` override them
+    for grading only.
     """
     body = norm(text)
-    return all(norm(k) in body for k in question["answer_keys"])
+    keys = question.get("grade_keys", question["answer_keys"])
+    return all(norm(k) in body for k in keys)
 
 
 def cites_a_source(text):
